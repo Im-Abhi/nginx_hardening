@@ -18,6 +18,7 @@ echo "--------------------------------"
 check_autoindex
 check_dedicated_service_account
 check_nginx_user_locked
+check_invalid_shell
 
 echo "--------------------------------"
 echo "Summary: PASS=$PASS FAIL=$FAIL"
