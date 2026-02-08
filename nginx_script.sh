@@ -24,6 +24,7 @@ check_dedicated_service_account
 check_nginx_user_locked
 check_invalid_shell
 check_server_tokens
+check_branding
 
 echo "--------------------------------"
 echo "Summary: PASS=$PASS FAIL=$FAIL"
