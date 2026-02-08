@@ -31,6 +31,7 @@ check_invalid_shell
 check_server_tokens
 check_branding
 check_hidden_files_disabled
+check_proxy_hide_headers
 
 echo "--------------------------------"
 echo "Summary: PASS=$PASS FAIL=$FAIL"
