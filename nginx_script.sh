@@ -19,12 +19,18 @@ done
 echo "Running nginx security audit..."
 echo "--------------------------------"
 
+# minimize modules
 check_autoindex
+
+# account security
 check_dedicated_service_account
 check_nginx_user_locked
 check_invalid_shell
+
+# information disclosure
 check_server_tokens
 check_branding
+check_hidden_files_disabled
 
 echo "--------------------------------"
 echo "Summary: PASS=$PASS FAIL=$FAIL"
