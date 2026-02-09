@@ -51,6 +51,7 @@ for file in "$BASE_DIR/checks/encryption/"*; do
 done
 
 check_http_to_https_redirect
+check_ssl_certificate_configured
 # =================== ENCRYPTION END ===========================
 
 
