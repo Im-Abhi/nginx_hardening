@@ -52,6 +52,7 @@ done
 
 check_http_to_https_redirect
 check_ssl_certificate_configured
+check_ssl_protocols
 # =================== ENCRYPTION END ===========================
 
 
