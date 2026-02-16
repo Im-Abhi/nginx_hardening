@@ -59,6 +59,7 @@ check_hsts_configuration
 check_ssl_session_tickets_disabled
 check_http2_enabled
 check_pfs_ciphers
+check_weak_ciphers_disabled
 # =================== ENCRYPTION END ===========================
 
 
