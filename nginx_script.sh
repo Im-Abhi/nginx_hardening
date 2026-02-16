@@ -56,6 +56,7 @@ check_ssl_protocols
 check_ssl_dhparam
 check_ocsp_stapling
 check_hsts_configuration
+check_ssl_session_tickets_disabled
 # =================== ENCRYPTION END ===========================
 
 
