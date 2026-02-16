@@ -60,6 +60,7 @@ check_ssl_session_tickets_disabled
 check_http2_enabled
 check_pfs_ciphers
 check_weak_ciphers_disabled
+check_private_key_permissions
 # =================== ENCRYPTION END ===========================
 
 
