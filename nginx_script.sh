@@ -74,6 +74,7 @@ check_client_timeouts
 check_client_max_body_size
 check_large_client_header_buffers
 check_limit_conn
+check_limit_req
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 
