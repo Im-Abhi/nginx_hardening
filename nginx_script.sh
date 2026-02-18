@@ -72,6 +72,7 @@ done
 check_ip_based_restrictions
 check_client_timeouts
 check_client_max_body_size
+check_large_client_header_buffers
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 
