@@ -70,6 +70,7 @@ for file in "$BASE_DIR/checks/request_filtering_restrictions/"*; do
 done
 
 check_ip_based_restrictions
+check_client_timeouts
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 
