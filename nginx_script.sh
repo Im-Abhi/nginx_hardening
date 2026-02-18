@@ -64,6 +64,15 @@ check_private_key_permissions
 # =================== ENCRYPTION END ===========================
 
 
+# ============= REQUEST FILTERING & RESTRICTIONS START ===============
+for file in "$BASE_DIR/checks/request_filtering_restrictions/"*; do
+    source "$file"
+done
+
+check_ip_based_restrictions
+# ============= REQUEST FILTERING & RESTRICTIONS END ===============
+
+
 echo "--------------------------------"
 echo "Summary: PASS=$PASS FAIL=$FAIL"
 
