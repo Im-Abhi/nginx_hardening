@@ -76,6 +76,7 @@ check_large_client_header_buffers
 check_limit_conn
 check_limit_req
 check_x_frame_options
+check_x_content_type_options
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 
