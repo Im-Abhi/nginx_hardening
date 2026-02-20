@@ -78,6 +78,7 @@ check_limit_req
 check_x_frame_options
 check_x_content_type_options
 check_content_security_policy
+check_referrer_policy
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 
