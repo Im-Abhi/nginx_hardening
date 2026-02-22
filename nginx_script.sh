@@ -31,6 +31,15 @@ check_invalid_shell
 # =================== ACCOUNT SECURITY END ===========================
 
 
+# ================== NETWORK CONFIGURATION START ======================
+for file in "$BASE_DIR/checks/network_configuration/"*; do
+    source "$file"
+done
+
+check_listen_ports
+# ================== NETWORK CONFIGURATION END =============================
+
+
 
 # =================== INFORMATION DISCLOSURE START ===========================
 for file in "$BASE_DIR/checks/information_disclosure/"*; do
