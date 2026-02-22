@@ -38,6 +38,7 @@ done
 
 check_listen_ports
 check_keepalive_timeout
+check_send_timeout
 # ================== NETWORK CONFIGURATION END =============================
 
 
