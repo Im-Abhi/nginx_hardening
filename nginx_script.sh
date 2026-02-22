@@ -37,6 +37,7 @@ for file in "$BASE_DIR/checks/network_configuration/"*; do
 done
 
 check_listen_ports
+check_unknown_host_rejection
 check_keepalive_timeout
 check_send_timeout
 # ================== NETWORK CONFIGURATION END =============================
