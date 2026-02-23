@@ -37,6 +37,7 @@ for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
 done
 
 check_nginx_ownership
+check_nginx_permissions
 # ================== PERMISSIONS & OWNERSHIP END ======================
 
 
