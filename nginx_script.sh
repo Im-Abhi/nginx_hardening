@@ -31,6 +31,15 @@ check_invalid_shell
 # =================== ACCOUNT SECURITY END ===========================
 
 
+# ================== PERMISSIONS & OWNERSHIP START ======================
+for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
+    source "$file"
+done
+
+check_nginx_ownership
+# ================== PERMISSIONS & OWNERSHIP END ======================
+
+
 # ================== NETWORK CONFIGURATION START ======================
 for file in "$BASE_DIR/checks/network_configuration/"*; do
     source "$file"
