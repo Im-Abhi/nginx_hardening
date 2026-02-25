@@ -39,6 +39,7 @@ done
 check_nginx_ownership
 check_nginx_permissions
 check_nginx_pid_file
+check_core_dump_directory
 # ================== PERMISSIONS & OWNERSHIP END ======================
 
 
