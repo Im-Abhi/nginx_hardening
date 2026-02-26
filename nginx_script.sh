@@ -68,6 +68,14 @@ check_proxy_hide_headers
 # =================== INFORMATION DISCLOSURE END ===========================
 
 
+# =================== LOGGING START ===========================
+for file in "$BASE_DIR/checks/logging/"*; do
+    source "$file"
+done
+
+check_access_logging
+# =================== LOGGING END ===========================
+
 
 # =================== ENCRYPTION START ===========================
 for file in "$BASE_DIR/checks/encryption/"*; do
