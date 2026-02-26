@@ -76,6 +76,7 @@ done
 check_access_logging
 check_error_logging
 check_log_rotation
+check_remote_syslog
 # =================== LOGGING END ===========================
 
 
