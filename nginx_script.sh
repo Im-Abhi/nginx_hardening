@@ -74,6 +74,7 @@ for file in "$BASE_DIR/checks/logging/"*; do
 done
 
 check_access_logging
+check_error_logging
 # =================== LOGGING END ===========================
 
 
