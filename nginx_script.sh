@@ -75,6 +75,7 @@ done
 
 check_access_logging
 check_error_logging
+check_log_rotation
 # =================== LOGGING END ===========================
 
 
