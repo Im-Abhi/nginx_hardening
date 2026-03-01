@@ -1,11 +1,45 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -uo pipefail
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+MODE="audit"   # SAFE DEFAULT
+
+usage() {
+    echo "Usage: $0 [--audit | --remediate]"
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --audit)
+            MODE="audit"
+            shift
+            ;;
+        --remediate)
+            MODE="remediate"
+            shift
+            ;;
+        *)
+            usage
+            ;;
+    esac
+done
+
+export MODE
 
 # Load shared helpers
 source "$BASE_DIR/lib/common.sh"
 
-echo "Running nginx security audit..."
+# Confirm remediation once
+if [[ "$MODE" == "remediate" ]]; then
+    read -r -p "Remediation mode will modify system configuration. Continue? (yes/no): " CONFIRM
+    [[ "$CONFIRM" == "yes" ]] || exit 1
+fi
+
+echo "Running nginx security script..."
+echo "Mode: $MODE"
 echo "--------------------------------"
 
 # Load checks
