@@ -153,6 +153,6 @@ check_referrer_policy
 
 
 echo "--------------------------------"
-echo "Summary: PASS=$PASS FAIL=$FAIL"
+echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
 
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
