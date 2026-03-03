@@ -1,23 +1,82 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-check_invalid_shell() { 
-    l_output="" l_output2="" l_out="" 
-    if [ -f /etc/nginx/nginx.conf ]; then 
-        l_user="$(awk '$1~/^\s*user\s*$/ {print $2}' /etc/nginx/nginx.conf | sed -r 's/;.*//g')" 
-        l_valid_shells="^($( sed -rn '/^\//{s,/,\\\\/,g;p}' /etc/shells | paste -s -d '|' - ))$" 
-        l_out="$(awk -v pat="$l_valid_shells" -v ngusr="$l_user" -F: '($(NF) ~ pat && $1==ngusr) { $(NF-1) }' /etc/passwd)" 
-        if [ -z "$l_out" ]; then 
-            l_output="nginx user account: \"$l_user\" has an invalid shell" 
-        else 
-            l_output2="nginx user account: \"$l_user\" has a valid shell: \"$l_out\"" 
-        fi 
-    else 
-        l_output2="nginx user account can not be determined.\n - file: \"/etc/nginx/nginx.conf\" is missing" 
-    fi 
+# CIS 2.2.3 - Ensure the NGINX service account has a non-login shell
+# Automation Level: Automated
 
-    if [ -z "$l_output2" ]; then 
-        pass "$l_output" 
-    else 
-        fail "$l_output2" 
-    fi 
-} 
+check_invalid_shell() {
+    local config
+    local service_user
+    local user_shell
+
+    # -------- Prerequisite: NGINX Config --------
+    if ! config="$(nginx -T 2>/dev/null)"; then
+        manual "2.2.3 invalid shell check (nginx configuration dump failed)"
+        return
+    fi
+
+    # -------- Extract nginx service user (ignore comments) --------
+    service_user=$(echo "$config" \
+        | grep -Evi '^[[:space:]]*#' \
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+
+    if [[ -z "$service_user" ]]; then
+        handle_failure "2.2.3 nginx user directive is missing" remediate_invalid_shell
+        return
+    fi
+
+    if ! id "$service_user" >/dev/null 2>&1; then
+        handle_failure "2.2.3 OS account '$service_user' does not exist" remediate_invalid_shell
+        return
+    fi
+
+    # -------- Get current shell --------
+    user_shell=$(getent passwd "$service_user" | cut -d: -f7)
+
+    if [[ -z "$user_shell" ]]; then
+        pass "2.2.3 nginx service account '$service_user' has no shell configured"
+        return
+    fi
+
+    # -------- Enforce explicit non-login shells --------
+    case "$user_shell" in
+        "/sbin/nologin"|"/usr/sbin/nologin"|"/bin/false")
+            pass "2.2.3 nginx service account '$service_user' has non-login shell ($user_shell)"
+            ;;
+        *)
+            handle_failure \
+            "2.2.3 nginx service account '$service_user' has a login shell ('$user_shell')" \
+            remediate_invalid_shell
+            ;;
+    esac
+}
+
+remediate_invalid_shell() {
+    local config
+    local service_user
+    local new_shell="/sbin/nologin"
+
+    if ! config="$(nginx -T 2>/dev/null)"; then
+        return 1
+    fi
+
+    service_user=$(echo "$config" \
+        | grep -Evi '^[[:space:]]*#' \
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+
+    if [[ -z "$service_user" ]]; then
+        return 1
+    fi
+
+    if ! id "$service_user" >/dev/null 2>&1; then
+        return 1
+    fi
+
+    # Do NOT modify if user has running processes
+    if pgrep -u "$service_user" >/dev/null 2>&1; then
+        return 1
+    fi
+
+    usermod -s "$new_shell" "$service_user" >/dev/null 2>&1 || return 1
+
+    return 0
+}
