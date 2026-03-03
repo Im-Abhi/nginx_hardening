@@ -60,7 +60,7 @@ for file in "$BASE_DIR/checks/account_security/"*; do
 done
 
 check_dedicated_service_account
-check_nginx_user_locked
+check_service_account_locked
 check_invalid_shell
 # =================== ACCOUNT SECURITY END ===========================
 
