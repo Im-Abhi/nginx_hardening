@@ -70,7 +70,7 @@ for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
     source "$file"
 done
 
-check_nginx_ownership
+check_files_directories_owner
 check_nginx_permissions
 check_nginx_pid_file
 check_core_dump_directory
