@@ -1,24 +1,23 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 2.3.4 – Ensure the core dump directory is secured
-# Verifies:
-#   - working_directory directive (if present) is compliant
-# Manual Control:
-#   - Displays findings only if non-compliant
-#   - No automatic remediation
+# Automation Level: Manual
 
 check_core_dump_directory() {
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "nginx configuration dump failed"
+    local config working_dir
+    local service_user service_group
+    local errors=""
+
+    # -------- Prerequisite --------
+    if ! nginx -t >/dev/null 2>&1; then
+        manual "2.3.4 nginx configuration invalid"
         return
     fi
 
-    local config working_dir nginx_group
-    local non_compliant=0
-
     config="$(nginx -T 2>/dev/null)"
 
+    # -------- Extract working_directory --------
     working_dir=$(echo "$config" | awk '
         /^[[:space:]]*#/ { next }
         /^[[:space:]]*working_directory[[:space:]]+/ {
@@ -29,48 +28,90 @@ check_core_dump_directory() {
     ')
 
     if [[ -z "$working_dir" ]]; then
-        pass "working_directory directive not configured"
+        pass "2.3.4 working_directory directive not configured (compliant by default)"
         return
     fi
 
-    nginx_group=$(awk -F: '/^nginx:/{print $1}' /etc/group)
+    # -------- Extract Service Account (Strictly Dynamic) --------
+    # 1. Try config file first
+    service_user=$(echo "$config" \
+        | grep -Evi '^[[:space:]]*#' \
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+    
+    # 2. Fallback to compile-time user parameter
+    if [[ -z "$service_user" ]]; then
+        service_user=$(nginx -V 2>&1 | grep -o -- '--user=[^ ]*' | cut -d= -f2)
+        [[ -z "$service_user" ]] && service_user="nobody" # NGINX ultimate fallback
+    fi
 
-    [[ -z "$nginx_group" ]] && nginx_group="nginx"
+    # 3. Resolve group via OS lookup, fallback to compile-time group parameter
+    service_group=$(getent passwd "$service_user" | cut -d: -f4 \
+        | xargs -I{} getent group {} | cut -d: -f1)
+    
+    if [[ -z "$service_group" ]]; then
+        service_group=$(nginx -V 2>&1 | grep -o -- '--group=[^ ]*' | cut -d= -f2)
+        [[ -z "$service_group" ]] && service_group="$service_user"
+    fi
 
+    # -------- Directory Existence --------
     if [[ ! -d "$working_dir" ]]; then
-        printf "Directory not found: %s\n" "$working_dir"
-        fail "Core dump directory non-compliant"
-        return
-    fi
-
-    local owner group perm
-    owner=$(stat -c "%U" "$working_dir" 2>/dev/null)
-    group=$(stat -c "%G" "$working_dir" 2>/dev/null)
-    perm=$(stat -c "%a" "$working_dir" 2>/dev/null)
-
-    if [[ "$owner" != "root" ]]; then
-        printf "Owner mismatch: %s (expected root)\n" "$owner"
-        non_compliant=1
-    fi
-
-    if [[ "$group" != "$nginx_group" ]]; then
-        printf "Group mismatch: %s (expected %s)\n" "$group" "$nginx_group"
-        non_compliant=1
-    fi
-
-    if (( perm % 10 != 0 )); then
-        printf "Other permissions not restricted: %s\n" "$perm"
-        non_compliant=1
-    fi
-
-    if [[ "$working_dir" == /usr/share/nginx/html* ]]; then
-        printf "Directory within web document root: %s\n" "$working_dir"
-        non_compliant=1
-    fi
-
-    if [[ "$non_compliant" -eq 0 ]]; then
-        pass "Core dump directory is compliant"
+        errors+="  - Directory not found: $working_dir\n"
     else
-        fail "Core dump directory non-compliant"
+        local owner group perm
+        owner=$(stat -L -c "%U" "$working_dir" 2>/dev/null)
+        group=$(stat -L -c "%G" "$working_dir" 2>/dev/null)
+        perm=$(stat -L -c "%a" "$working_dir" 2>/dev/null)
+
+        # -------- Ownership Checks --------
+        if [[ "$owner" != "root" ]]; then
+            errors+="  - Owner mismatch: $owner (expected root)\n"
+        fi
+
+        if [[ "$group" != "$service_group" ]]; then
+            errors+="  - Group mismatch: $group (expected $service_group)\n"
+        fi
+
+        # -------- Permission Checks --------
+        if find "$working_dir" -maxdepth 0 -perm /0022; then
+            errors+="  - Directory permissions are too broad (mode: $perm, expected <= 750)\n"
+        fi
+
+        # -------- Location Check (Strictly Dynamic) --------
+        local doc_root
+        local in_doc_root=0
+        
+        # Loop through every unique root/alias defined anywhere in the config
+        while read -r doc_root; do
+            [[ -z "$doc_root" ]] && continue
+            
+            # Check if the working directory falls anywhere inside this specific web root
+            if [[ "$working_dir" == "$doc_root"* ]]; then
+                in_doc_root=1
+                errors+="  - Directory located inside web document root ($doc_root)\n"
+                break
+            fi
+        done < <(echo "$config" | awk '
+            /^[[:space:]]*#/ { next }
+            /^[[:space:]]*(root|alias)[[:space:]]+/ {
+                gsub(";", "", $2)
+                print $2
+            }
+        ' | sort -u)
+    fi
+
+    # -------- Final Reporting --------
+    if [[ -z "$errors" ]]; then
+        pass "2.3.4 core dump directory '$working_dir' is compliant"
+    else
+        local remediation=""
+        remediation+="\n  Remediation Guidance:\n"
+        remediation+="  - Remove the 'working_directory' directive if not required.\n"
+        remediation+="  - Ensure directory is outside the web document root.\n"
+        remediation+="  - Set correct ownership:\n"
+        remediation+="      chown root:$service_group $working_dir\n"
+        remediation+="  - Restrict permissions:\n"
+        remediation+="      chmod 750 $working_dir\n"
+
+        manual "2.3.4 core dump directory review required:\n${errors%\\n}${remediation}"
     fi
 }
