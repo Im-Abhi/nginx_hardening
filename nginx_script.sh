@@ -71,7 +71,7 @@ for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
 done
 
 check_files_directories_owner
-check_nginx_permissions
+check_files_directories_access
 check_nginx_pid_file
 check_core_dump_directory
 # ================== PERMISSIONS & OWNERSHIP END ======================

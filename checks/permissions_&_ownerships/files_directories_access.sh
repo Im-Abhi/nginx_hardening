@@ -1,46 +1,64 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 2.3.2 – Ensure access to NGINX directories and files is restricted
-# Verifies:
-#   - Directories under /etc/nginx are 755 or more restrictive
-#   - Files under /etc/nginx are 660 or more restrictive
-# Automation Level: Automated (safe permission tightening)
+# Automation Level: Automated
 
-check_nginx_permissions() {
+_get_nginx_conf_dir() {
+    local conf_path
+    conf_path=$(nginx -V 2>&1 \
+        | grep -o -- '--conf-path=[^ ]*' \
+        | cut -d= -f2)
 
-    if [[ ! -d /etc/nginx ]]; then
-        fail "/etc/nginx directory not found"
-        return
+    if [[ -n "$conf_path" ]]; then
+        dirname "$conf_path"
+    else
+        echo "/etc/nginx"
     fi
-
-    local dir_violation file_violation
-
-    dir_violation=$(find /etc/nginx -type d -perm /022 -print -quit 2>/dev/null)
-
-    file_violation=$(find /etc/nginx -type f \( -perm /001 -o -perm /002 -o -perm /004 \) -print -quit 2>/dev/null)
-
-    if [[ -z "$dir_violation" && -z "$file_violation" ]]; then
-        pass "NGINX directory and file permissions are restricted"
-        return
-    fi
-
-    remediate_nginx_permissions
 }
 
-remediate_nginx_permissions() {
+check_files_directories_access() {
+    local conf_dir
+    conf_dir=$(_get_nginx_conf_dir)
 
-    find /etc/nginx -type d -exec chmod go-w {} + 2>/dev/null
-    find /etc/nginx -type f -exec chmod ug-x,o-rwx {} + 2>/dev/null
-
-    local verify_dir verify_file
-
-    verify_dir=$(find /etc/nginx -type d -perm /022 -print -quit 2>/dev/null)
-
-    verify_file=$(find /etc/nginx -type f \( -perm /001 -o -perm /002 -o -perm /004 \) -print -quit 2>/dev/null)
-
-    if [[ -z "$verify_dir" && -z "$verify_file" ]]; then
-        pass "NGINX permissions corrected"
-    else
-        fail "Permission remediation failed"
+    if [[ ! -d "$conf_dir" ]]; then
+        manual "2.3.2 permissions check failed (directory '$conf_dir' not found)"
+        return
     fi
+
+    local non_compliant
+    non_compliant=$(find "$conf_dir" -xdev \
+        \( \
+            \( -type d -perm /022 \) -o \
+            \( -type f -perm /133 \) \
+        \) \
+        -printf "  - %p (perms: %m)\n" 2>/dev/null)
+
+    if [[ -z "$non_compliant" ]]; then
+        pass "2.3.2 all file and directory permissions in '$conf_dir' are compliant"
+    else
+        handle_failure \
+        "2.3.2 found files/directories with incorrect permissions:\n$non_compliant" \
+        remediate_files_directories_access
+    fi
+}
+
+remediate_files_directories_access() {
+    local conf_dir
+    conf_dir=$(_get_nginx_conf_dir)
+
+    if [[ ! -d "$conf_dir" ]]; then
+        return 1
+    fi
+
+    # Fix only non-compliant directories
+    find "$conf_dir" -xdev \
+        -type d -perm /022 \
+        -exec chmod 755 {} + >/dev/null 2>&1 || return 1
+
+    # Fix only non-compliant files
+    find "$conf_dir" -xdev \
+        -type f -perm /133 \
+        -exec chmod 644 {} + >/dev/null 2>&1 || return 1
+
+    return 0
 }
