@@ -44,24 +44,6 @@ echo "--------------------------------"
 
 # Load checks
 
-# ================== PERMISSIONS & OWNERSHIP START ======================
-for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
-    source "$file"
-done
-
-check_files_directories_owner
-check_files_directories_access
-check_nginx_pid_file
-check_core_dump_directory
-# ================== PERMISSIONS & OWNERSHIP END ======================
-
-
-echo "--------------------------------"
-echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
-
-[ "$FAIL" -eq 0 ] && exit 0 || exit 1
-
-
 # ================== NETWORK CONFIGURATION START ======================
 for file in "$BASE_DIR/checks/network_configuration/"*; do
     source "$file"
@@ -69,11 +51,15 @@ done
 
 check_listen_ports
 check_unknown_host_rejection
-check_keepalive_timeout
+run_control \
+"2.4.3" "Ensure keepalive_timeout is 10 seconds or less, but not 0" check_keepalive_timeout remediate_keepalive_timeout
 check_send_timeout
 # ================== NETWORK CONFIGURATION END =============================
 
+echo "--------------------------------"
+echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
 
+[ "$FAIL" -eq 0 ] && exit 0 || exit 1
 
 # =================== INFORMATION DISCLOSURE START ===========================
 for file in "$BASE_DIR/checks/information_disclosure/"*; do

@@ -39,6 +39,34 @@ manual() {
     ((MANUAL++))
 }
 
+run_control() {
+
+    local control_id="$1"
+    local control_name="$2"
+    local check_function="$3"
+    local remediate_function="$4"
+
+    local errors
+    errors="$($check_function)"
+
+    if [[ -z "$errors" ]]; then
+        pass "$control_id $control_name"
+        return
+    fi
+
+    if [[ "$MODE" == "remediate" ]]; then
+        if "$remediate_function"; then
+            remediated "$control_id $control_name"
+        else
+            fail "$control_id $control_name"
+            echo -e "$errors"
+        fi
+    else
+        fail "$control_id $control_name"
+        echo -e "$errors"
+    fi
+}
+
 handle_failure() {
     local message="$1"
     local remediation_function="$2"
