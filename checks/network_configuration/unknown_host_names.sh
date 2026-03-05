@@ -1,89 +1,118 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 2.4.2 – Ensure requests for unknown host names are rejected
 # Verifies:
 #   - Invalid Host header returns 4xx response
 #   - Every server block explicitly defines server_name
-# Automation Level: Automated (safe catch-all insertion if needed)
+# Automation Level: Automated (safe HTTP catch-all insertion) / Manual for server_names
 
 check_unknown_host_rejection() {
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "nginx configuration dump failed"
+    local errors=""
+
+    # -------- Prerequisite --------
+    if ! nginx -t >/dev/null 2>&1; then
+        manual "2.4.2 nginx configuration invalid"
         return
     fi
 
+    # -------- 1. Active Rejection Test --------
     local status
+
     status=$(curl -k -s -o /dev/null -w "%{http_code}" \
+        --connect-timeout 2 --max-time 3 \
         https://127.0.0.1 \
-        -H "Host: invalid.host.com")
+        -H "Host: invalid.host.local" 2>/dev/null)
 
-    local missing_server_name=0
-
-    nginx -T 2>/dev/null | awk '
-    BEGIN { in_server=0; depth=0; has_name=0 }
-    /^[[:space:]]*#/ { next }
-
-    /^[[:space:]]*server[[:space:]]*\{/ {
-        in_server=1; depth=1; has_name=0; next
-    }
-
-    in_server {
-        if ($0 ~ /\{/) depth++
-        if ($0 ~ /\}/) depth--
-
-        if (depth == 1 && $0 ~ /^[[:space:]]*server_name[[:space:]]+/)
-            has_name=1
-
-        if (depth == 0) {
-            if (!has_name) print "MISSING"
-            in_server=0
-        }
-    }
-    ' | grep -q MISSING && missing_server_name=1
-
-    if [[ "$status" =~ ^4[0-9][0-9]$ && "$missing_server_name" -eq 0 ]]; then
-        pass "Unknown host requests rejected and server_name explicitly defined"
-        return
+    if [[ "$status" == "000" || -z "$status" ]]; then
+        status=$(curl -s -o /dev/null -w "%{http_code}" \
+            --connect-timeout 2 --max-time 3 \
+            http://127.0.0.1 \
+            -H "Host: invalid.host.local" 2>/dev/null)
     fi
 
-    remediate_unknown_host_rejection
+    if [[ ! "$status" =~ ^4[0-9][0-9]$ ]]; then
+        errors+="  - Unknown host requests are not rejected (HTTP Status returned: ${status:-None})\n"
+    fi
+
+    # -------- 2. Detect missing server_name directives --------
+    if nginx -T 2>/dev/null | awk '
+        BEGIN { in_server=0; depth=0; has_name=0 }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*server[[:space:]]*\{/ { in_server=1; depth=1; has_name=0; next }
+        in_server {
+            if ($0 ~ /\{/) depth++
+            if ($0 ~ /\}/) depth--
+            if (depth == 1 && $0 ~ /^[[:space:]]*server_name[[:space:]]+/) has_name=1
+            if (depth == 0) {
+                if (!has_name) print "MISSING"
+                in_server=0
+            }
+        }
+    ' | grep -q "MISSING"; then
+        errors+="  - One or more server{} blocks are missing a 'server_name' directive\n"
+    fi
+
+    # -------- Final Reporting --------
+    if [[ -z "$errors" ]]; then
+        pass "2.4.2 Unknown host requests rejected and server_names explicitly defined"
+    else
+        handle_failure \
+"2.4.2 Unknown host rejection checks failed:
+${errors%\\n}
+
+Remediation Guidance:
+  - Deploy a default catch-all server block:
+
+        server {
+            listen 80 default_server;
+            server_name _;
+            return 444;
+        }
+
+  - Ensure every real server block explicitly defines a 'server_name'.
+" \
+        remediate_unknown_host_rejection
+    fi
 }
+
 
 remediate_unknown_host_rejection() {
 
-    local target_file="/etc/nginx/conf.d/00-cis-default-catchall.conf"
+    local conf_d_dir="/etc/nginx/conf.d"
+    local target_file="$conf_d_dir/00-cis-default-catchall.conf"
     local backup_file="${target_file}.bak.$(date +%s)"
 
-    if [[ -f "$target_file" ]]; then
-        cp "$target_file" "$backup_file" || { fail "backup failed"; return; }
+    # Ensure standard directory exists
+    [[ -d "$conf_d_dir" ]] || return 1
+
+    # Detect if a default server already exists
+    if nginx -T 2>/dev/null | grep -E "listen[[:space:]]+80[[:space:]]+default_server" >/dev/null; then
+        return 0
     fi
 
+    # Backup existing file if present
+    if [[ -f "$target_file" ]]; then
+        cp "$target_file" "$backup_file" || return 1
+    fi
+
+    # Create catch-all server block
     cat > "$target_file" <<EOF
+# CIS 2.4.2 Catch-all server to reject unknown Host headers
 server {
-    return 404;
+    listen 80 default_server;
+    server_name _;
+    return 444;
 }
 EOF
 
+    # Validate nginx configuration
     if ! nginx -t >/dev/null 2>&1; then
-        [[ -f "$backup_file" ]] && mv "$backup_file" "$target_file"
-        fail "nginx configuration invalid after remediation"
-        return
+        [[ -f "$backup_file" ]] && mv "$backup_file" "$target_file" || rm -f "$target_file"
+        return 1
     fi
 
     nginx -s reload >/dev/null 2>&1
 
-    local verify
-    verify=$(curl -k -s -o /dev/null -w "%{http_code}" \
-        https://127.0.0.1 \
-        -H "Host: invalid.host.com")
-
-    if [[ "$verify" =~ ^4[0-9][0-9]$ ]]; then
-        rm -f "$backup_file"
-        pass "Unknown host rejection configured"
-    else
-        [[ -f "$backup_file" ]] && mv "$backup_file" "$target_file"
-        nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1
-        fail "Unknown host rejection remediation failed"
-    fi
+    return 0
 }
