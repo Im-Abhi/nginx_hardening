@@ -1,73 +1,116 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 2.4.4 – Ensure send_timeout is 10 seconds or less, but not 0
-# Verifies:
-#   - send_timeout directive exists
-#   - Value is > 0 and <= 10
-# Automation Level: Automated (safe update if non-compliant)
-# Remediation Example:
-#   send_timeout 10;
+# Automation Level: Automated
 
 check_send_timeout() {
+    local errors=""
+    local found=0
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "nginx configuration dump failed"
-        return
-    fi
+    # Parse the live NGINX config, track the originating file/line, and extract the timeout value
+    while read -r file line_num value; do
+        found=1
 
-    local config found=0 compliant=0 value
+        local seconds
 
-    config="$(nginx -T 2>/dev/null)"
-
-    while IFS= read -r line; do
-
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-        if [[ "$line" =~ ^[[:space:]]*send_timeout[[:space:]]+([0-9]+) ]]; then
-            found=1
-            value="${BASH_REMATCH[1]}"
-
-            if [[ "$value" -gt 0 && "$value" -le 10 ]]; then
-                compliant=1
-            fi
+        # Handle NGINX time formats (s, ms, or raw seconds)
+        if [[ "$value" =~ ms$ ]]; then
+            seconds=$(( ${value%ms} / 1000 ))
+        elif [[ "$value" =~ s$ ]]; then
+            seconds=${value%s}
+        else
+            seconds=$value
         fi
 
-    done <<< "$config"
+        if [[ "$seconds" -eq 0 ]]; then
+            errors+="  - send_timeout is set to 0 in $file (Line $line_num)\n"
+        elif [[ "$seconds" -gt 10 ]]; then
+            errors+="  - send_timeout is greater than 10 seconds ($value) in $file (Line $line_num)\n"
+        fi
 
-    if [[ "$found" -eq 1 && "$compliant" -eq 1 ]]; then
-        pass "send_timeout is properly configured"
-        return
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; line=0; sub(/:$/, "", file); next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*send_timeout[[:space:]]+/ {
+            sub(/;/, "", $2)
+            print file, line, $2
+        }
+    ')
+
+    if [[ "$found" -eq 0 ]]; then
+        errors+="  - send_timeout directive is not configured (defaults to 60s)\n"
     fi
 
-    remediate_send_timeout
+    if [[ -n "$errors" ]]; then
+        echo -e "${errors%\\n}"
+    fi
 }
 
 remediate_send_timeout() {
+    local main_config="/etc/nginx/nginx.conf"
+    local modified_files=()
+    local backups=()
+    local found=0
 
-    local target_file="/etc/nginx/nginx.conf"
-    local backup_file="${target_file}.bak.$(date +%s)"
+    while read -r file; do
+        found=1
 
-    if [[ ! -f "$target_file" ]]; then
-        fail "nginx.conf not found"
-        return
-    fi
+        local skip=0
+        local f
+        for f in "${modified_files[@]}"; do
+            [[ "$f" == "$file" ]] && skip=1 && break
+        done
+        [[ "$skip" -eq 0 ]] && modified_files+=("$file")
 
-    cp "$target_file" "$backup_file" || { fail "backup failed"; return; }
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/, "", file); next }
+        /^[[:space:]]*send_timeout[[:space:]]+/ { print file }
+    ')
 
-    if grep -Eq '^[[:space:]]*send_timeout' "$target_file"; then
-        sed -i -E 's/^[[:space:]]*send_timeout[[:space:]]+[0-9]+.*/send_timeout 10;/' "$target_file"
+    if [[ "$found" -eq 1 ]]; then
+        local file
+        for file in "${modified_files[@]}"; do
+            [[ -f "$file" ]] || continue
+
+            local backup_file="${file}.bak.$(date +%s)"
+            cp "$file" "$backup_file" || continue
+            backups+=("$file:$backup_file")
+
+            sed -i -E \
+            's/^([[:space:]]*)send_timeout[[:space:]]+[^;]+;/\1send_timeout 10;/' \
+            "$file"
+        done
     else
-        sed -i '/http\s*{/a \    send_timeout 10;' "$target_file"
+        [[ -f "$main_config" ]] || return 1
+
+        local backup_file="${main_config}.bak.$(date +%s)"
+        cp "$main_config" "$backup_file" || return 1
+        backups+=("$main_config:$backup_file")
+
+        if grep -Eq '^[[:space:]]*http[[:space:]]*\{' "$main_config"; then
+            sed -i '/http[[:space:]]*{/a \    send_timeout 10;' "$main_config"
+        else
+            return 1
+        fi
     fi
 
     if ! nginx -t >/dev/null 2>&1; then
-        mv "$backup_file" "$target_file"
-        fail "nginx configuration invalid after remediation"
-        return
+        local entry orig bak
+        for entry in "${backups[@]}"; do
+            orig="${entry%%:*}"
+            bak="${entry##*:}"
+            [[ -f "$bak" ]] && mv "$bak" "$orig"
+        done
+        return 1
     fi
 
-    nginx -s reload >/dev/null 2>&1
-    rm -f "$backup_file"
+    local entry bak
+    for entry in "${backups[@]}"; do
+        bak="${entry##*:}"
+        rm -f "$bak"
+    done
 
-    pass "send_timeout remediated to 10 seconds"
+    nginx -s reload >/dev/null 2>&1
+    return 0
 }

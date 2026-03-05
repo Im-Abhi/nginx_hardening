@@ -84,8 +84,8 @@ done
 
 check_listen_ports
 check_unknown_host_rejection
-"2.4.3" "Ensure keepalive_timeout is 10 seconds or less, but not 0" check_keepalive_timeout remediate_keepalive_timeout
-check_send_timeout
+run_control "2.4.3" "Ensure keepalive_timeout is 10 seconds or less, but not 0" check_keepalive_timeout remediate_keepalive_timeout
+run_control "2.4.4" "Ensure send_timeout is 10 seconds or less, but not 0" check_send_timeout remediate_send_timeout
 # ================== NETWORK CONFIGURATION END =============================
 
 
