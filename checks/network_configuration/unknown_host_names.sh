@@ -82,22 +82,18 @@ remediate_unknown_host_rejection() {
     local conf_d_dir="/etc/nginx/conf.d"
     local target_file="$conf_d_dir/00-cis-default-catchall.conf"
     local backup_file="${target_file}.bak.$(date +%s)"
+    local catchall_fixed=0
 
-    # Ensure standard directory exists
     [[ -d "$conf_d_dir" ]] || return 1
 
-    # Detect if a default server already exists
-    if nginx -T 2>/dev/null | grep -E "listen[[:space:]]+80[[:space:]]+default_server" >/dev/null; then
-        return 0
-    fi
+    # Detect default server
+    if ! nginx -T 2>/dev/null | grep -E "listen[[:space:]]+80[[:space:]]+default_server" >/dev/null; then
 
-    # Backup existing file if present
-    if [[ -f "$target_file" ]]; then
-        cp "$target_file" "$backup_file" || return 1
-    fi
+        if [[ -f "$target_file" ]]; then
+            cp "$target_file" "$backup_file" || return 1
+        fi
 
-    # Create catch-all server block
-    cat > "$target_file" <<EOF
+        cat > "$target_file" <<EOF
 # CIS 2.4.2 Catch-all server to reject unknown Host headers
 server {
     listen 80 default_server;
@@ -106,13 +102,15 @@ server {
 }
 EOF
 
-    # Validate nginx configuration
-    if ! nginx -t >/dev/null 2>&1; then
-        [[ -f "$backup_file" ]] && mv "$backup_file" "$target_file" || rm -f "$target_file"
-        return 1
+        if nginx -t >/dev/null 2>&1; then
+            nginx -s reload >/dev/null 2>&1
+            catchall_fixed=1
+        else
+            [[ -f "$backup_file" ]] && mv "$backup_file" "$target_file" || rm -f "$target_file"
+            return 1
+        fi
     fi
 
-    nginx -s reload >/dev/null 2>&1
-
-    return 0
+    # Even if catch-all fixed, server_name issues remain manual
+    return 1
 }
