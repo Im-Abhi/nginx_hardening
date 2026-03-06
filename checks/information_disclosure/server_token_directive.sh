@@ -13,7 +13,6 @@ check_server_tokens() {
     local errors=""
     local directive_found=0
 
-    # Scan nginx configuration
     while read -r file line val; do
         directive_found=1
         if [[ "$val" != "off" ]]; then
@@ -33,7 +32,6 @@ check_server_tokens() {
         errors+="  - server_tokens directive is not configured (default is ON)\n"
     fi
 
-    # Active header test (CIS recommendation)
     local header
     header=$(curl -s -k -I --connect-timeout 2 --max-time 3 http://127.0.0.1 2>/dev/null | grep -i '^Server:')
 
@@ -41,7 +39,6 @@ check_server_tokens() {
         errors+="  - Server header exposes nginx version: ${header//$'\r'/}\n"
     fi
 
-    # Output results for run_control engine
     if [[ -n "$errors" ]]; then
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Add or update the following inside your 'http' or 'server' blocks:\n"
@@ -49,6 +46,7 @@ check_server_tokens() {
         echo -e "${errors%\\n}"
     fi
 }
+
 
 remediate_server_tokens() {
 
@@ -59,28 +57,26 @@ remediate_server_tokens() {
     local backups=()
     local directive_exists=0
 
-    # Detect if directive exists anywhere
     if nginx -T 2>/dev/null | grep -Eq '[[:space:]]server_tokens[[:space:]]+'; then
         directive_exists=1
     fi
 
-    # Discover non-compliant files
+    # UPDATED BLOCK (duplicate-safe)
     mapfile -t modified_files < <(
-    nginx -T 2>/dev/null | awk '
-    /^# configuration file/ { file=$4; sub(/:$/,"",file); next }
-    /^[[:space:]]*server_tokens[[:space:]]+/ {
-        val=$2; sub(/;/,"",val);
-        if (val != "off") print file
-    }' | sort -u
-)
+        nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); next }
+        /^[[:space:]]*server_tokens[[:space:]]+/ {
+            val=$2; sub(/;/,"",val);
+            if (val != "off") print file
+        }' | sort -u
+    )
 
-    # Update files containing non-compliant directives
     if [[ ${#modified_files[@]} -gt 0 ]]; then
-        local file
         for file in "${modified_files[@]}"; do
+
             [[ -f "$file" ]] || continue
 
-            local backup_file="${file}.bak.$(date +%s)"
+            backup_file="${file}.bak.$(date +%s)"
             cp "$file" "$backup_file" || continue
             backups+=("$file:$backup_file")
 
@@ -89,12 +85,11 @@ remediate_server_tokens() {
             "$file"
         done
 
-    # Inject directive if completely missing
     elif [[ "$directive_exists" -eq 0 ]]; then
 
         [[ -f "$main_config" ]] || return 1
 
-        local backup_file="${main_config}.bak.$(date +%s)"
+        backup_file="${main_config}.bak.$(date +%s)"
         cp "$main_config" "$backup_file" || return 1
         backups+=("$main_config:$backup_file")
 
@@ -105,13 +100,10 @@ remediate_server_tokens() {
         fi
 
     else
-        # Directive already correct but active header test failed
         return 1
     fi
 
-    # Validate configuration
     if ! nginx -t >/dev/null 2>&1; then
-        local entry orig bak
         for entry in "${backups[@]}"; do
             orig="${entry%%:*}"
             bak="${entry##*:}"
@@ -120,14 +112,10 @@ remediate_server_tokens() {
         return 1
     fi
 
-    # Cleanup backups
-    local entry bak
     for entry in "${backups[@]}"; do
-        bak="${entry##*:}"
-        rm -f "$bak"
+        rm -f "${entry##*:}"
     done
 
     nginx -s reload >/dev/null 2>&1
-
     return 0
 }
