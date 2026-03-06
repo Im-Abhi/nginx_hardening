@@ -95,7 +95,7 @@ for file in "$BASE_DIR/checks/information_disclosure/"*; do
     source "$file"
 done
 
-check_server_tokens
+run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
 check_branding
 check_hidden_files_disabled
 check_proxy_hide_headers

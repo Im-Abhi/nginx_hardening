@@ -44,33 +44,21 @@ echo "--------------------------------"
 
 # Load checks
 
-# ================== NETWORK CONFIGURATION START ======================
-for file in "$BASE_DIR/checks/network_configuration/"*; do
-    source "$file"
-done
-
-check_listen_ports
-check_unknown_host_rejection
-run_control "2.4.3" "Ensure keepalive_timeout is 10 seconds or less, but not 0" check_keepalive_timeout remediate_keepalive_timeout
-run_control "2.4.4" "Ensure send_timeout is 10 seconds or less, but not 0" check_send_timeout remediate_send_timeout
-# ================== NETWORK CONFIGURATION END =============================
-
-echo "--------------------------------"
-echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
-
-[ "$FAIL" -eq 0 ] && exit 0 || exit 1
-
 # =================== INFORMATION DISCLOSURE START ===========================
 for file in "$BASE_DIR/checks/information_disclosure/"*; do
     source "$file"
 done
 
-check_server_tokens
+run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
 check_branding
 check_hidden_files_disabled
 check_proxy_hide_headers
 # =================== INFORMATION DISCLOSURE END ===========================
 
+echo "--------------------------------"
+echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
+
+[ "$FAIL" -eq 0 ] && exit 0 || exit 1
 
 # =================== LOGGING START ===========================
 for file in "$BASE_DIR/checks/logging/"*; do
