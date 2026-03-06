@@ -98,7 +98,7 @@ done
 run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
 run_control "2.5.2" "Ensure default error and index.html pages do not reference NGINX" check_default_pages_branding remediate_default_pages_branding
 run_control "2.5.3" "Ensure hidden file serving is disabled" check_hidden_files_disabled remediate_hidden_files_disabled
-check_proxy_hide_headers
+run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure"
 # =================== INFORMATION DISCLOSURE END ===========================
 
 
