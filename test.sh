@@ -50,7 +50,7 @@ for file in "$BASE_DIR/checks/information_disclosure/"*; do
 done
 
 run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
-check_branding
+run_control "2.5.2" "Ensure default error and index.html pages do not reference NGINX" check_default_pages_branding remediate_default_pages_branding
 check_hidden_files_disabled
 check_proxy_hide_headers
 # =================== INFORMATION DISCLOSURE END ===========================
