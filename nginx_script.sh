@@ -98,7 +98,7 @@ done
 run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
 run_control "2.5.2" "Ensure default error and index.html pages do not reference NGINX" check_default_pages_branding remediate_default_pages_branding
 run_control "2.5.3" "Ensure hidden file serving is disabled" check_hidden_files_disabled remediate_hidden_files_disabled
-run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure"
+run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure" check_reverse_proxy remediate_reverse_proxy
 # =================== INFORMATION DISCLOSURE END ===========================
 
 
@@ -110,7 +110,7 @@ done
 run_control "3.1" "Ensure detailed logging is enabled" check_detailed_logging remediate_detailed_logging
 run_control "3.2" "Ensure access logging is enabled" check_access_logging remediate_access_logging
 run_control "3.3" "Ensure error logging is enabled and set to info level" check_error_logging remediate_error_logging
-check_log_rotation
+run_control "3.4" "Ensure log files are rotated" check_log_rotation remediate_log_rotation
 check_remote_syslog
 check_remote_access_syslog
 # =================== LOGGING END ===========================

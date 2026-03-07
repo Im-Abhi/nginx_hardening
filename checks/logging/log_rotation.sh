@@ -1,77 +1,86 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 3.4 – Ensure log files are rotated
-# Verifies:
-#   - Log rotation is set to 'weekly'
-#   - Log retention is set to 'rotate 13' (approx. 3 months)
 # Automation Level: Automated
 
 check_log_rotation() {
+
     local target_file="/etc/logrotate.d/nginx"
+    local errors=""
 
     if [[ ! -f "$target_file" ]]; then
-        fail "Nginx logrotate configuration not found at $target_file"
-        return
+        errors+="  - NGINX logrotate configuration not found at $target_file\n"
+    else
+
+        # Ignore commented lines when checking directives
+        if ! grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*weekly\b'; then
+            errors+="  - Log rotation is not set to 'weekly'\n"
+        fi
+
+        if ! grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*rotate[[:space:]]+13\b'; then
+            errors+="  - Log retention is not set to 'rotate 13'\n"
+        fi
     fi
 
-    local is_weekly=0
-    local is_rotate_13=0
 
-    if grep -Eq '^[[:space:]]*weekly\b' "$target_file"; then
-        is_weekly=1
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Edit $target_file and ensure the following directives exist:\n"
+        errors+="      weekly\n"
+        errors+="      rotate 13\n"
+        errors+="  - Always comply with organizational log retention policies if different values are required."
+
+        echo -e "${errors%\\n}"
     fi
-
-    if grep -Eq '^[[:space:]]*rotate[[:space:]]+13\b' "$target_file"; then
-        is_rotate_13=1
-    fi
-
-    if [[ "$is_weekly" -eq 1 && "$is_rotate_13" -eq 1 ]]; then
-        pass "Log files are rotated weekly and kept for 13 weeks"
-        return
-    fi
-
-    remediate_log_rotation
 }
 
+
 remediate_log_rotation() {
+
     local target_file="/etc/logrotate.d/nginx"
-    local backup_file="${target_file}.bak.$(date +%s%N)"
 
-    if [[ ! -f "$target_file" ]]; then
-        fail "Nginx logrotate config missing, cannot remediate."
-        return
+    [[ -f "$target_file" ]] || return 1
+    command -v logrotate >/dev/null 2>&1 || return 1
+
+    local backup_file="${target_file}.bak.$(date +%s)"
+
+    cp "$target_file" "$backup_file" || return 1
+
+
+    # Replace daily/monthly/yearly with weekly (ignore commented lines)
+    if grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*(daily|monthly|yearly)\b'; then
+
+        sed -i -E '/^[[:space:]]*#/! s/^([[:space:]]*)(daily|monthly|yearly)\b/\1weekly/' "$target_file"
+
+    elif ! grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*weekly\b'; then
+
+        # Insert weekly after first block opening
+        awk '/\{/ && !done { print; print "    weekly"; done=1; next } 1' \
+            "$target_file" > "${target_file}.tmp" && mv "${target_file}.tmp" "$target_file"
     fi
 
-    cp "$target_file" "$backup_file" || { fail "backup failed"; return; }
 
-    # Replace 'daily', 'monthly', or 'yearly' with 'weekly'
-    sed -i -E 's/^[[:space:]]*(daily|monthly|yearly)\b/\tweekly/' "$target_file"
+    # Replace rotate value (ignore commented lines)
+    if grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*rotate[[:space:]]+[0-9]+'; then
 
-    # Replace 'rotate <any_number>' with 'rotate 13'
-    if grep -Eq '^[[:space:]]*rotate[[:space:]]+[0-9]+' "$target_file"; then
-        sed -i -E 's/^[[:space:]]*rotate[[:space:]]+[0-9]+/\trotate 13/' "$target_file"
-    else
-        # If the 'rotate' directive is completely missing, inject it right after 'weekly'
-        sed -i -E '/^[[:space:]]*weekly\b/a \trotate 13' "$target_file"
+        sed -i -E '/^[[:space:]]*#/! s/^([[:space:]]*)rotate[[:space:]]+[0-9]+/\1rotate 13/' "$target_file"
+
+    elif ! grep -Ev '^[[:space:]]*#' "$target_file" | grep -Eq '^[[:space:]]*rotate[[:space:]]+13\b'; then
+
+        awk '/\{/ && !done { print; print "    rotate 13"; done=1; next } 1' \
+            "$target_file" > "${target_file}.tmp" && mv "${target_file}.tmp" "$target_file"
     fi
 
-    # Verify the remediation was successful
-    local is_weekly=0
-    local is_rotate_13=0
 
-    if grep -Eq '^[[:space:]]*weekly\b' "$target_file"; then
-        is_weekly=1
-    fi
-
-    if grep -Eq '^[[:space:]]*rotate[[:space:]]+13\b' "$target_file"; then
-        is_rotate_13=1
-    fi
-
-    if [[ "$is_weekly" -eq 1 && "$is_rotate_13" -eq 1 ]]; then
-        rm -f "$backup_file"
-        pass "Log rotation remediated to weekly and 13 weeks"
-    else
+    # Validate syntax using logrotate debug mode
+    if ! logrotate -d "$target_file" >/dev/null 2>&1; then
         mv "$backup_file" "$target_file"
-        fail "Log rotation remediation failed"
+        rm -f "${target_file}.tmp"
+        return 1
     fi
+
+
+    rm -f "$backup_file" "${target_file}.tmp"
+
+    return 0
 }
