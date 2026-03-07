@@ -1,115 +1,149 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 3.2 – Ensure access logging is enabled
-# Automated safe remediation
+# Automation Level: Automated
 
 check_access_logging() {
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "nginx configuration dump failed"
-        return
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
+
+    local errors=""
+    local has_on=0
+    local has_off=0
+
+    while read -r file line val; do
+        if [[ "$val" == "off" ]]; then
+            has_off=1
+            errors+="  - access_log is disabled ('off') in $file (line $line)\n"
+        else
+            has_on=1
+        fi
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*access_log[[:space:]]+/ {
+            val=$2; sub(/;/,"",val)
+            print file, line, val
+        }
+    ')
+
+    if [[ "$has_on" -eq 0 ]]; then
+        errors+="  - No active 'access_log' directives found in configuration.\n"
     fi
 
-    local config found=0 disabled=0
-    config="$(nginx -T 2>/dev/null)"
-
-    # Define regex patterns in variables to prevent Bash from interpreting the semicolons
-    local re_off='^[[:space:]]*access_log[[:space:]]+off[[:space:]]*;'
-    local re_on='^[[:space:]]*access_log[[:space:]]+[^;]+;'
-    local re_off_simple='off[[:space:]]*;'
-
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-        if [[ "$line" =~ $re_off ]]; then
-            disabled=1
-        fi
-
-        if [[ "$line" =~ $re_on ]] && [[ ! "$line" =~ $re_off_simple ]]; then
-            found=1
-        fi
-    done <<< "$config"
-
-    if [[ "$found" -eq 1 && "$disabled" -eq 0 ]]; then
-        pass "Access logging is enabled"
-        return
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Edit your NGINX configuration and ensure access logging is enabled.\n"
+        errors+="  - Remove or comment out any 'access_log off;' directives.\n"
+        errors+="  - Example configuration to add inside your 'http' or 'server' block:\n"
+        errors+="      access_log /var/log/nginx/access.log;"
+        echo -e "${errors%\\n}"
     fi
-
-    remediate_access_logging
 }
+
 
 remediate_access_logging() {
 
-    local files
-    local -a modified_files
-    local -a backup_files
+    command -v nginx >/dev/null 2>&1 || return 1
 
-    # Fixed: Removed the trailing colon that Nginx attaches to file paths in config dumps
-    files="$(nginx -T 2>/dev/null | awk '/^# configuration file /{print $4}' | sed 's/:$//')"
+    local main_config="/etc/nginx/nginx.conf"
+    local backups=()
+    local has_on=0
+    local has_off=0
+    local modified_files=()
 
-    while IFS= read -r file; do
-        [[ -f "$file" ]] || continue
+    # Discover configuration state and non-compliant files in a SINGLE pass
+    while read -r file val; do
+        if [[ "$val" == "off" ]]; then
+            has_off=1
+            local skip=0
+            local f
+            for f in "${modified_files[@]}"; do
+                [[ "$f" == "$file" ]] && skip=1 && break
+            done
+            [[ "$skip" -eq 0 ]] && modified_files+=("$file")
+        else
+            has_on=1
+        fi
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); next }
+        /^[[:space:]]*access_log[[:space:]]+/ {
+            val=$2; sub(/;/,"",val)
+            print file, val
+        }
+    ')
 
-        if grep -Eq '^[[:space:]]*access_log[[:space:]]+off[[:space:]]*;' "$file"; then
-            local backup="${file}.bak.$(date +%s%N)"
-            cp "$file" "$backup" || { fail "backup failed"; return; }
+    # Exit early if already perfectly compliant
+    if [[ "$has_off" -eq 0 && "$has_on" -eq 1 ]]; then
+        return 0
+    fi
+
+    # Phase 1 — comment out 'access_log off;'
+    if [[ ${#modified_files[@]} -gt 0 ]]; then
+        local file
+        for file in "${modified_files[@]}"; do
+            [[ -f "$file" ]] || continue
+
+            local backup_file="${file}.bak.$(date +%s)"
+            cp "$file" "$backup_file" || continue
+            backups+=("$file:$backup_file")
 
             sed -i -E \
             's/^([[:space:]]*)access_log[[:space:]]+off[[:space:]]*;/\1# access_log off;/' \
             "$file"
-
-            modified_files+=("$file")
-            backup_files+=("$backup")
-        fi
-    done <<< "$files"
-
-    local new_config
-    new_config="$(nginx -T 2>/dev/null)"
-
-    if ! echo "$new_config" | grep -Eq '^[[:space:]]*access_log[[:space:]]+[^;]+;' ; then
-        local main
-        main=$(nginx -V 2>&1 | grep -- '--conf-path' | sed -e 's/.*--conf-path=\([^ ]*\).*/\1/')
-        if [ -z "$main" ]; then
-            main="/etc/nginx/nginx.conf"
-        fi
-        
-        local backup="${main}.bak.$(date +%s%N)"
-
-        cp "$main" "$backup" || { fail "backup failed"; return; }
-
-        # Fixed: Standardized whitespace in the sed append command
-        sed -i '/http[[:space:]]*{/a \    access_log /var/log/nginx/access.log main;' "$main"
-
-        modified_files+=("$main")
-        backup_files+=("$backup")
-    fi
-
-    if ! nginx -t >/dev/null 2>&1; then
-        for i in "${!modified_files[@]}"; do
-            mv "${backup_files[$i]}" "${modified_files[$i]}"
         done
-        fail "nginx configuration invalid after remediation"
-        return
     fi
+
+    # Phase 2 — inject default logging if none exist
+    if [[ "$has_on" -eq 0 ]]; then
+        [[ -f "$main_config" ]] || return 1
+
+        # Prevent double-backing up the main config if Phase 1 already touched it
+        local main_backed_up=0
+        local entry
+        for entry in "${backups[@]}"; do
+            if [[ "${entry%%:*}" == "$main_config" ]]; then
+                main_backed_up=1
+                break
+            fi
+        done
+
+        if [[ "$main_backed_up" -eq 0 ]]; then
+            local backup_file="${main_config}.bak.$(date +%s)"
+            cp "$main_config" "$backup_file" || return 1
+            backups+=("$main_config:$backup_file")
+        fi
+
+        if grep -Eq '^[[:space:]]*http[[:space:]]*\{' "$main_config"; then
+            sed -i '/http[[:space:]]*{/a \    access_log /var/log/nginx/access.log;' "$main_config"
+        else
+            return 1
+        fi
+    fi
+
+    # Validate configuration & Rollback
+    if ! nginx -t >/dev/null 2>&1; then
+        local entry orig bak
+        for entry in "${backups[@]}"; do
+            orig="${entry%%:*}"
+            bak="${entry##*:}"
+            [[ -f "$bak" ]] && mv "$bak" "$orig"
+        done
+        return 1
+    fi
+
+    # Cleanup
+    local entry bak
+    for entry in "${backups[@]}"; do
+        bak="${entry##*:}"
+        rm -f "$bak"
+    done
 
     nginx -s reload >/dev/null 2>&1
 
-    local verify
-    verify="$(nginx -T 2>/dev/null)"
-
-    if echo "$verify" | grep -Eq '^[[:space:]]*access_log[[:space:]]+[^;]+;' && \
-       ! echo "$verify" | grep -Eq '^[[:space:]]*access_log[[:space:]]+off[[:space:]]*;' ; then
-
-        for backup in "${backup_files[@]}"; do
-            rm -f "$backup"
-        done
-
-        pass "Access logging remediated"
-    else
-        for i in "${!modified_files[@]}"; do
-            mv "${backup_files[$i]}" "${modified_files[$i]}"
-        done
-        nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1
-        fail "Access logging remediation failed"
-    fi
+    return 0
 }
