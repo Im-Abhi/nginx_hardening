@@ -109,7 +109,7 @@ done
 
 run_control "3.1" "Ensure detailed logging is enabled" check_detailed_logging remediate_detailed_logging
 run_control "3.2" "Ensure access logging is enabled" check_access_logging remediate_access_logging
-check_error_logging
+run_control "3.3" "Ensure error logging is enabled and set to info level" check_error_logging remediate_error_logging
 check_log_rotation
 check_remote_syslog
 check_remote_access_syslog

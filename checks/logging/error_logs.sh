@@ -1,84 +1,164 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # CIS 3.3 – Ensure error logging is enabled and set to info level
-# Verifies:
-#   - error_log directive exists
-#   - Not commented out
-#   - Logging level is set to info
-# Automation Level: Automated (safe update of nginx.conf only)
-# Remediation Example:
-#   error_log /var/log/nginx/error_log.log info;
+# Automation Level: Automated
 
 check_error_logging() {
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "nginx configuration dump failed"
-        return
-    fi
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
 
-    local config compliant=0
+    local errors=""
+    local has_info=0
+    local has_any=0
 
-    config="$(nginx -T 2>/dev/null)"
+    while read -r file line val; do
+        has_any=1
 
-    # Fixed: Extracted the regex with the semicolon into a variable
-    local re_error_info='^[[:space:]]*error_log[[:space:]]+[^;]+[[:space:]]+info[[:space:]]*;'
-
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-
-        if [[ "$line" =~ $re_error_info ]]; then
-            compliant=1
-            break
+        if [[ "$val" =~ (^|[[:space:]])info$ ]]; then
+            has_info=1
+        else
+            errors+="  - error_log in $file (line $line) is not set to 'info' level (currently: $val)\n"
         fi
-    done <<< "$config"
 
-    if [[ "$compliant" -eq 1 ]]; then
-        pass "Error logging enabled with info level"
-        return
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+
+        /^[[:space:]]*error_log[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*error_log[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print file, line, val
+        }
+    ')
+
+    if [[ "$has_any" -eq 0 ]]; then
+        errors+="  - No 'error_log' directives found in configuration. (NGINX defaults to 'error' level)\n"
+
+    elif [[ "$has_info" -eq 0 ]]; then
+        errors+="  - No 'error_log' directive is set to the required 'info' level.\n"
     fi
 
-    remediate_error_logging
+
+    if [[ -n "$errors" ]]; then
+
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Edit your NGINX configuration and ensure error logging is set to 'info'.\n"
+        errors+="  - Example configuration:\n"
+        errors+="      error_log /var/log/nginx/error.log info;"
+
+        echo -e "${errors%\\n}"
+    fi
 }
+
 
 remediate_error_logging() {
 
-    local target_file="/etc/nginx/nginx.conf"
-    local backup_file="${target_file}.bak.$(date +%s%N)"
+    command -v nginx >/dev/null 2>&1 || return 1
 
-    if [[ ! -f "$target_file" ]]; then
-        fail "nginx.conf not found"
-        return
+    local main_config="/etc/nginx/nginx.conf"
+    local backups=()
+    local modified_files=()
+    local has_info=0
+    local has_any=0
+
+    while read -r file val; do
+
+        has_any=1
+
+        if [[ "$val" =~ (^|[[:space:]])info$ ]]; then
+            has_info=1
+        else
+
+            local skip=0
+            local f
+
+            for f in "${modified_files[@]}"; do
+                [[ "$f" == "$file" ]] && skip=1 && break
+            done
+
+            [[ "$skip" -eq 0 ]] && modified_files+=("$file")
+        fi
+
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); next }
+        /^[[:space:]]*#/ { next }
+
+        /^[[:space:]]*error_log[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*error_log[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print file, val
+        }
+    ')
+
+
+    if [[ "$has_any" -eq 1 && "$has_info" -eq 1 && ${#modified_files[@]} -eq 0 ]]; then
+        return 0
     fi
 
-    cp "$target_file" "$backup_file" || { fail "backup failed"; return; }
 
-    if grep -Eq '^[[:space:]]*error_log[[:space:]]+' "$target_file"; then
-        sed -i -E \
-        's|^[[:space:]]*error_log[[:space:]]+[^;]+;|error_log /var/log/nginx/error_log.log info;|' \
-        "$target_file"
-    else
-        # Fixed: Standardized spaces in the sed append string
-        sed -i '/http[[:space:]]*{/a \    error_log /var/log/nginx/error_log.log info;' \
-        "$target_file"
+    if [[ ${#modified_files[@]} -gt 0 ]]; then
+
+        local file
+
+        for file in "${modified_files[@]}"; do
+
+            [[ -f "$file" ]] || continue
+
+            local backup_file="${file}.bak.$(date +%s)"
+
+            cp "$file" "$backup_file" || continue
+            backups+=("$file:$backup_file")
+
+            sed -i -E \
+            's/^([[:space:]]*error_log[[:space:]]+[^[:space:];]+)([[:space:]]+[a-z]+)?[[:space:]]*;/\1 info;/' \
+            "$file"
+        done
     fi
+
+
+    if [[ "$has_any" -eq 0 ]]; then
+
+        [[ -f "$main_config" ]] || return 1
+
+        local backup_file="${main_config}.bak.$(date +%s)"
+        cp "$main_config" "$backup_file" || return 1
+
+        backups+=("$main_config:$backup_file")
+
+        if grep -Eq '^[[:space:]]*http[[:space:]]*\{' "$main_config"; then
+            sed -i '/http[[:space:]]*{/a \    error_log /var/log/nginx/error.log info;' "$main_config"
+        else
+            return 1
+        fi
+    fi
+
 
     if ! nginx -t >/dev/null 2>&1; then
-        mv "$backup_file" "$target_file"
-        fail "nginx configuration invalid after remediation"
-        return
+
+        local entry orig bak
+
+        for entry in "${backups[@]}"; do
+            orig="${entry%%:*}"
+            bak="${entry##*:}"
+
+            [[ -f "$bak" ]] && mv "$bak" "$orig"
+        done
+
+        return 1
     fi
+
+
+    for entry in "${backups[@]}"; do
+        rm -f "${entry##*:}"
+    done
 
     nginx -s reload >/dev/null 2>&1
 
-    local verify
-    verify="$(nginx -T 2>/dev/null)"
-
-    if echo "$verify" | grep -Eq '^[[:space:]]*error_log[[:space:]]+[^;]+[[:space:]]+info[[:space:]]*;' ; then
-        rm -f "$backup_file"
-        pass "Error logging remediated to info level"
-    else
-        mv "$backup_file" "$target_file"
-        nginx -t >/dev/null 2>&1 && nginx -s reload >/dev/null 2>&1
-        fail "Error logging remediation failed"
-    fi
+    return 0
 }
