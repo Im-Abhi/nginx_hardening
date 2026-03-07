@@ -107,6 +107,7 @@ for file in "$BASE_DIR/checks/logging/"*; do
     source "$file"
 done
 
+run_control "3.1" "Ensure detailed logging is enabled" check_detailed_logging remediate_detailed_logging
 check_access_logging
 check_error_logging
 check_log_rotation

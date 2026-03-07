@@ -44,26 +44,12 @@ echo "--------------------------------"
 
 # Load checks
 
-# =================== INFORMATION DISCLOSURE START ===========================
-for file in "$BASE_DIR/checks/information_disclosure/"*; do
-    source "$file"
-done
-
-run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
-run_control "2.5.2" "Ensure default error and index.html pages do not reference NGINX" check_default_pages_branding remediate_default_pages_branding
-run_control "2.5.3" "Ensure hidden file serving is disabled" check_hidden_files_disabled remediate_hidden_files_disabled
-run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure" check_proxy_hide_headers remediate_proxy_hide_headers
-# =================== INFORMATION DISCLOSURE END ===========================
-
-echo "--------------------------------"
-echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
-
-[ "$FAIL" -eq 0 ] && exit 0 || exit 1
-
 # =================== LOGGING START ===========================
 for file in "$BASE_DIR/checks/logging/"*; do
     source "$file"
 done
+
+run_control "3.1" "Ensure detailed logging is enabled" check_detailed_logging remediate_detailed_logging
 
 check_access_logging
 check_error_logging
@@ -72,6 +58,10 @@ check_remote_syslog
 check_remote_access_syslog
 # =================== LOGGING END ===========================
 
+echo "--------------------------------"
+echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
+
+[ "$FAIL" -eq 0 ] && exit 0 || exit 1
 
 # =================== ENCRYPTION START ===========================
 for file in "$BASE_DIR/checks/encryption/"*; do
