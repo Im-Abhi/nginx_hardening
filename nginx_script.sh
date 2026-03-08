@@ -121,7 +121,7 @@ for file in "$BASE_DIR/checks/encryption/"*; do
     source "$file"
 done
 
-check_http_to_https_redirect
+run_control "4.1.1" "Ensure HTTP is redirected to HTTPS" check_http_to_https_redirect remediate_http_to_https_redirect
 check_ssl_certificate_configured
 check_ssl_protocols
 check_ssl_dhparam

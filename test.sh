@@ -44,29 +44,12 @@ echo "--------------------------------"
 
 # Load checks
 
-# =================== LOGGING START ===========================
-for file in "$BASE_DIR/checks/logging/"*; do
-    source "$file"
-done
-
-run_control "3.1" "Ensure detailed logging is enabled" check_detailed_logging remediate_detailed_logging
-run_control "3.2" "Ensure access logging is enabled" check_access_logging remediate_access_logging
-run_control "3.3" "Ensure error logging is enabled and set to info level" check_error_logging remediate_error_logging
-run_control "3.4" "Ensure log files are rotated" check_log_rotation remediate_log_rotation
-run_control "3.5" "Ensure error logs are sent to a remote syslog server" check_remote_syslog remediate_remote_syslog
-run_control "3.6" "Ensure access logs are sent to a remote syslog server" check_remote_access_syslog remediate_remote_access_syslog
-# =================== LOGGING END ===========================
-
-echo "--------------------------------"
-echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
-
-[ "$FAIL" -eq 0 ] && exit 0 || exit 1
-
 # =================== ENCRYPTION START ===========================
 for file in "$BASE_DIR/checks/encryption/"*; do
     source "$file"
 done
 
+run_control "4.1.1" "Ensure HTTP is redirected to HTTPS" check_http_to_https_redirect remediate_http_to_https_redirect
 check_http_to_https_redirect
 check_ssl_certificate_configured
 check_ssl_protocols
@@ -79,6 +62,11 @@ check_pfs_ciphers
 check_weak_ciphers_disabled
 check_private_key_permissions
 # =================== ENCRYPTION END ===========================
+
+echo "--------------------------------"
+echo "Summary: PASS=$PASS FAIL=$FAIL REMEDIATED=$REMEDIATED"
+
+[ "$FAIL" -eq 0 ] && exit 0 || exit 1
 
 
 # ============= REQUEST FILTERING & RESTRICTIONS START ===============

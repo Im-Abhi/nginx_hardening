@@ -1,18 +1,51 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+# CIS 4.1.1 - Ensure HTTP is redirected to HTTPS
+# Automation Level: Manual
 
 check_http_to_https_redirect() {
+    local config
+    local errors=""
 
-    # nginx -T is required to inspect effective configuration
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit HTTP to HTTPS redirect (nginx -T unavailable)"
+    # -------- Prerequisite Check --------
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo "  - nginx binary not found."
         return
     fi
 
-    # Check for a server block listening on port 80 that redirects to HTTPS
-    if nginx -T 2>/dev/null | grep -Pziq \
-'server\s*\{[^}]*listen\s+80[^;]*;[^}]*return\s+301\s+https://'; then
-        pass "HTTP requests are redirected to HTTPS"
-    else
-        fail "no HTTP to HTTPS redirect found for port 80 listeners"
+    if ! config="$(nginx -T 2>/dev/null)"; then
+        echo "  - Nginx configuration dump failed."
+        return
     fi
+
+    # -------- Remove commented lines --------
+    local clean_config
+    clean_config="$(grep -Evi '^[[:space:]]*#' <<< "$config")"
+
+    # -------- Detect HTTP listeners --------
+    if grep -Eqi '^[[:space:]]*listen[[:space:]]+[^;]*(^|[[:space:]:])80([[:space:]]|;)' <<< "$clean_config"; then
+
+        # -------- Check for HTTPS redirect --------
+        if ! grep -Eqi '^[[:space:]]*return[[:space:]]+301[[:space:]]+https://' <<< "$clean_config"; then
+            errors+="  - HTTP (port 80) listener found, but no explicit 'return 301 https://' redirect detected.\n"
+        fi
+    fi
+
+    # -------- Output Reporting --------
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Edit your web server configuration to redirect all unencrypted listening ports (e.g., port 80) to HTTPS.\n"
+        errors+="  - Example configuration:\n"
+        errors+="      server {\n"
+        errors+="          listen 80;\n"
+        errors+="          server_name example.com;\n"
+        errors+="          return 301 https://\$host\$request_uri;\n"
+        errors+="      }\n"
+
+        echo -e "${errors%\\n}"
+    fi
+}
+
+remediate_http_to_https_redirect() {
+    return 1
 }
