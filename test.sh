@@ -54,7 +54,7 @@ run_control "3.2" "Ensure access logging is enabled" check_access_logging remedi
 run_control "3.3" "Ensure error logging is enabled and set to info level" check_error_logging remediate_error_logging
 run_control "3.4" "Ensure log files are rotated" check_log_rotation remediate_log_rotation
 run_control "3.5" "Ensure error logs are sent to a remote syslog server" check_remote_syslog remediate_remote_syslog
-check_remote_access_syslog
+run_control "3.6" "Ensure access logs are sent to a remote syslog server" check_remote_access_syslog remediate_remote_access_syslog
 # =================== LOGGING END ===========================
 
 echo "--------------------------------"
