@@ -1,55 +1,94 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# CIS 4.X.X – Ensure Private Key File Permissions Are 400
-# Verifies:
-#   - All ssl_certificate_key files configured in nginx have permission 400.
+# CIS 4.1.3 – Ensure private key permissions are restricted
 # Automation Level: Automated
-# Notes:
-#   - Extracts key paths from effective nginx configuration (nginx -T).
-#   - Only validates keys actively used by nginx.
-# Remediation Example:
-#   chmod 400 /path/to/keyfile.key
 
 check_private_key_permissions() {
 
-    # Ensure effective configuration is available
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit private key permissions (nginx -T unavailable)"
-        return
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
+
+    local errors=""
+    local keys=()
+
+    # Extract private keys dynamically from effective configuration
+    while read -r key; do
+        [[ -n "$key" ]] && keys+=("$key")
+    done < <(nginx -T 2>/dev/null | awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*ssl_certificate_key[[:space:]]+/ {
+            sub(/^[[:space:]]*ssl_certificate_key[[:space:]]+/, "")
+            sub(/;[[:space:]]*$/, "")
+            gsub(/["\047]/, "")
+            print $0
+        }
+    ' | sort -u)
+
+    # No configured keys means no violation of this specific control
+    if [[ ${#keys[@]} -eq 0 ]]; then
+        return 0
     fi
 
-    local keys non_compliant=0
+    local key
+    for key in "${keys[@]}"; do
 
-    # Extract all ssl_certificate_key paths from effective config
-    keys=$(nginx -T 2>/dev/null | \
-        grep -Poi '^\h*ssl_certificate_key\h+\K[^;]+' | sort -u)
-
-    if [ -z "$keys" ]; then
-        fail "No ssl_certificate_key directives found in configuration"
-        return
-    fi
-
-    while IFS= read -r key; do
-
-        # Remove quotes if present
-        key=$(echo "$key" | sed 's/"//g')
-
-        if [ ! -f "$key" ]; then
-            fail "Private key file not found: $key"
-            non_compliant=1
+        if [[ ! -f "$key" ]]; then
+            errors+="  - Configured private key file not found on disk: $key\n"
             continue
         fi
 
-        perm=$(stat -Lc "%a" "$key" 2>/dev/null)
+        local perm
+        # -L flag follows symlinks (crucial for Let's Encrypt certs)
+        # Combines GNU stat (-c) with BSD stat (-f) for universal compatibility
+        perm=$(stat -Lc "%a" "$key" 2>/dev/null || stat -Lf "%Lp" "$key")
 
-        if [ "$perm" != "400" ]; then
-            fail "Private key file $key has insecure permission ($perm, expected 400)"
-            non_compliant=1
+        if [[ "$perm" != "400" ]]; then
+            errors+="  - Private key $key has insecure permissions ($perm). Expected: 400\n"
         fi
+    done
 
-    done <<< "$keys"
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Run the following command to restrict permissions on your private keys:\n"
+        errors+="      chmod 400 /path/to/your/keyfile.key"
 
-    if [ "$non_compliant" -eq 0 ]; then
-        pass "All configured private key files have permission 400"
+        echo -e "${errors%\\n}"
     fi
+}
+
+remediate_private_key_permissions() {
+
+    command -v nginx >/dev/null 2>&1 || return 1
+
+    local keys=()
+
+    while read -r key; do
+        [[ -n "$key" ]] && keys+=("$key")
+    done < <(nginx -T 2>/dev/null | awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*ssl_certificate_key[[:space:]]+/ {
+            sub(/^[[:space:]]*ssl_certificate_key[[:space:]]+/, "")
+            sub(/;[[:space:]]*$/, "")
+            gsub(/["\047]/, "")
+            print $0
+        }
+    ' | sort -u)
+
+    local key
+    for key in "${keys[@]}"; do
+
+        [[ -f "$key" ]] || continue
+
+        local perm
+        perm=$(stat -Lc "%a" "$key" 2>/dev/null || stat -Lf "%Lp" "$key")
+
+        if [[ "$perm" != "400" ]]; then
+            # Standard chmod automatically follows symlinks and modifies the target
+            chmod 400 "$key" || return 1
+        fi
+    done
+
+    return 0
 }
