@@ -1,45 +1,110 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# CIS 4.X.X – Ensure Weak Ciphers Are Disabled
-# Verifies:
-#   - ssl_ciphers directive exists.
-#   - Weak cipher exclusions are explicitly present.
-# Automation Level: Partial
-# Notes:
-#   - This verifies exclusion patterns (!EXP, !NULL, !MD5, etc.).
-#   - Does not expand OpenSSL cipher macros.
-#   - TLS 1.3 cipher suites are not controlled by ssl_ciphers.
-# Remediation Example:
-#   ssl_ciphers ALL:!EXP:!NULL:!ADH:!LOW:!SSLv2:!SSLv3:!MD5:!RC4;
+# CIS 4.1.5 – Disable weak ciphers
+# Automation Level: Manual (Requires organizational policy review)
 
 check_weak_ciphers_disabled() {
 
-    if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit ssl_ciphers (nginx -T unavailable)"
-        return
-    fi
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
 
-    local config ciphers
+    local errors=""
+    local has_ssl=0
+    local has_proxy_pass=0
+    local has_proxy_ssl=0
 
-    config=$(nginx -T 2>/dev/null)
+    while read -r file line type val; do
 
-    ciphers=$(echo "$config" | \
-        grep -Poi '^\h*ssl_ciphers\h+\K[^;]+' | head -n1)
-
-    if [ -z "$ciphers" ]; then
-        fail "ssl_ciphers directive missing (for disabling weak ciphers)"
-        return
-    fi
-
-    # Required exclusion patterns
-    local required_exclusions="!EXP !NULL !ADH !LOW !SSLv2 !SSLv3 !MD5 !RC4"
-
-    for pattern in $required_exclusions; do
-        if ! echo "$ciphers" | grep -q "$pattern"; then
-            fail "ssl_ciphers missing required exclusion: $pattern"
-            return
+        if [[ "$type" == "proxy_pass" ]]; then
+            has_proxy_pass=1
+            continue
         fi
-    done
 
-    pass "Weak cipher exclusions properly configured"
+        if [[ "$type" == "ssl_ciphers" ]]; then
+            has_ssl=1
+        elif [[ "$type" == "proxy_ssl_ciphers" ]]; then
+            has_proxy_ssl=1
+        fi
+
+        if grep -qF "ALL" <<< "$val"; then
+
+            local missing=""
+            for pattern in "!EXP" "!NULL" "!ADH" "!LOW" "!SSLv2" "!SSLv3" "!MD5" "!RC4"; do
+                if ! grep -qF "$pattern" <<< "$val"; then
+                    missing="$missing $pattern"
+                fi
+            done
+
+            if [[ -n "$missing" ]]; then
+                errors+="  - $type in $file (line $line) uses 'ALL' but is missing required exclusions:$missing\n"
+            fi
+
+        else
+            local has_weak=0
+            local weak_list=""
+            
+            for cipher in $(tr ':' ' ' <<< "$val"); do
+                if [[ "$cipher" != !* ]]; then
+                    if grep -Eqi 'RC4|MD5|NULL|EXP|LOW' <<< "$cipher"; then
+                        has_weak=1
+                        weak_list="$weak_list $cipher"
+                    fi
+                fi
+            done
+
+            if [[ "$has_weak" -eq 1 ]]; then
+                errors+="  - $type in $file (line $line) explicitly enables weak ciphers:$weak_list\n"
+            fi
+        fi
+
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+
+        /^[[:space:]]*proxy_pass[[:space:]]+/ {
+            print file, line, "proxy_pass", "N/A"
+        }
+
+        /^[[:space:]]*(ssl_ciphers|proxy_ssl_ciphers)[[:space:]]+/ {
+            type=$1
+            val=$0
+            sub(/^[[:space:]]*(ssl_ciphers|proxy_ssl_ciphers)[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print file, line, type, val
+        }
+    ')
+
+    if [[ "$has_ssl" -eq 0 ]]; then
+        errors+="  - 'ssl_ciphers' directive is missing (NGINX defaults may allow weak ciphers).\n"
+    fi
+
+    if [[ "$has_proxy_pass" -eq 1 && "$has_proxy_ssl" -eq 0 ]]; then
+        errors+="  - NGINX acts as a proxy (proxy_pass found) but 'proxy_ssl_ciphers' is missing.\n"
+    fi
+
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Configure cipher suites to meet your organizational security policy.\n"
+        errors+="  - Example strong web server configuration (SSL Labs recommended):\n"
+        errors+="      ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;\n"
+
+        if [[ "$has_proxy_pass" -eq 1 ]]; then
+            errors+="  - Example strong proxy configuration:\n"
+            errors+="      proxy_ssl_ciphers ALL:!EXP:!NULL:!ADH:!LOW:!SSLv2:!SSLv3:!MD5:!RC4;\n"
+        fi
+
+        echo -e "${errors%\\n}"
+    fi
+}
+
+remediate_weak_ciphers_disabled() {
+
+    # This control intentionally requires manual remediation.
+    # Automatically modifying cipher suites may break compatibility
+    # with legacy clients, APIs, or upstream proxy services.
+
+    return 1
 }
