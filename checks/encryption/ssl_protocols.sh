@@ -28,7 +28,8 @@ check_ssl_protocols() {
             has_proxy_ssl=1
         fi
 
-        if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?\b' <<< "$val"; then
+        # FIXED REGEX HERE
+        if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?([[:space:]]|$)' <<< "$val"; then
             errors+="  - $type in $file (line $line) enables insecure protocols: $val\n"
         fi
 
@@ -92,7 +93,8 @@ remediate_ssl_protocols() {
         elif [[ "$type" == "ssl_protocols" ]]; then
             has_ssl=1
 
-            if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?\b' <<< "$val"; then
+            # FIXED REGEX HERE
+            if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?([[:space:]]|$)' <<< "$val"; then
                 local skip=0
                 local f
                 for f in "${mod_ssl_files[@]}"; do [[ "$f" == "$file" ]] && skip=1 && break; done
@@ -102,7 +104,8 @@ remediate_ssl_protocols() {
         elif [[ "$type" == "proxy_ssl_protocols" ]]; then
             has_proxy_ssl=1
 
-            if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?\b' <<< "$val"; then
+            # FIXED REGEX HERE
+            if grep -Eq 'SSLv[23]|TLSv1(\.0|\.1)?([[:space:]]|$)' <<< "$val"; then
                 local skip=0
                 local f
                 for f in "${mod_proxy_files[@]}"; do [[ "$f" == "$file" ]] && skip=1 && break; done
@@ -153,7 +156,7 @@ remediate_ssl_protocols() {
 
     for file in "${mod_proxy_files[@]}"; do
         [[ -f "$file" ]] && backup_target "$file" &&
-        sed -i -E 's/^([[:space:]]*proxy_ssl_protocols[[:space:]]+)[^;]+;/\1TLSv1.2 TLSv1.3;/' "$file"
+        sed -i -E 's/[[:space:]]*proxy_ssl_protocols[[:space:]]+[^;]+;/    proxy_ssl_protocols TLSv1.2 TLSv1.3;/' "$file"
     done
 
     # Properly isolated injections
