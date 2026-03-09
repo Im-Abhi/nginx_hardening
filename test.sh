@@ -52,7 +52,7 @@ done
 run_control "4.1.1" "Ensure HTTP is redirected to HTTPS" check_http_to_https_redirect remediate_http_to_https_redirect
 run_control "4.1.2" "Ensure a trusted certificate and trust chain is installed" check_ssl_certificate_configured remediate_ssl_certificate_configured
 run_control "4.1.3" "Ensure private key permissions are restricted" check_private_key_permissions remediate_private_key_permissions
-check_ssl_protocols
+run_control "4.1.4" "Ensure only modern TLS protocols are used" check_ssl_protocols remediate_ssl_protocols
 check_ssl_dhparam
 check_ocsp_stapling
 check_hsts_configuration
