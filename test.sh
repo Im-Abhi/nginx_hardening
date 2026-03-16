@@ -55,7 +55,7 @@ run_control "4.1.3" "Ensure private key permissions are restricted" check_privat
 run_control "4.1.4" "Ensure only modern TLS protocols are used" check_ssl_protocols remediate_ssl_protocols
 run_control "4.1.5" "Disable weak ciphers" check_weak_ciphers_disabled remediate_weak_ciphers_disabled
 run_control "4.1.6" "Ensure custom Diffie-Hellman parameters are used" check_ssl_dhparam remediate_ssl_dhparam
-check_ocsp_stapling
+run_control "4.1.7" "Ensure OCSP stapling is enabled" check_ocsp_stapling remediate_ocsp_stapling
 check_hsts_configuration
 check_ssl_session_tickets_disabled
 check_http2_enabled
