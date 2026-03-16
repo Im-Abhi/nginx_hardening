@@ -126,7 +126,7 @@ run_control "4.1.2" "Ensure a trusted certificate and trust chain is installed" 
 run_control "4.1.3" "Ensure private key permissions are restricted" check_private_key_permissions remediate_private_key_permissions
 run_control "4.1.4" "Ensure only modern TLS protocols are used" check_ssl_protocols remediate_ssl_protocols
 run_control "4.1.5" "Disable weak ciphers" check_weak_ciphers_disabled remediate_weak_ciphers_disabled
-check_ssl_dhparam
+run_control "4.1.6" "Ensure custom Diffie-Hellman parameters are used" check_ssl_dhparam remediate_ssl_dhparam
 check_ocsp_stapling
 check_hsts_configuration
 check_ssl_session_tickets_disabled
