@@ -129,6 +129,7 @@ run_control "4.1.5" "Disable weak ciphers" check_weak_ciphers_disabled remediate
 run_control "4.1.6" "Ensure custom Diffie-Hellman parameters are used" check_ssl_dhparam remediate_ssl_dhparam
 run_control "4.1.7" "Ensure OCSP stapling is enabled" check_ocsp_stapling remediate_ocsp_stapling
 run_control "4.1.8" "Ensure HTTP Strict Transport Security (HSTS) is enabled" check_hsts_configuration remediate_hsts_configuration
+run_control "4.1.11" "Ensure your domain is preloaded (HSTS Preload readiness)" check_hsts_preload remediate_hsts_preload
 check_ssl_session_tickets_disabled
 check_http2_enabled
 check_pfs_ciphers
