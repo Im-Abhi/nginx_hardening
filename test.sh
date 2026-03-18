@@ -60,7 +60,8 @@ run_control "4.1.8" "Ensure HTTP Strict Transport Security (HSTS) is enabled" ch
 run_control "4.1.11" "Ensure your domain is preloaded (HSTS Preload readiness)" check_hsts_preload remediate_hsts_preload
 run_control "4.1.12" "Ensure session resumption is disabled" check_ssl_session_tickets_disabled remediate_ssl_session_tickets_disabled
 run_control "4.1.13" "Ensure HTTP/2 is used" check_http2_enabled remediate_http2_enabled
-check_pfs_ciphers
+run_control "4.1.14" "Ensure only Perfect Forward Secrecy Ciphers are Leveraged" check_pfs_ciphers remediate_pfs_ciphers
+
 # =================== ENCRYPTION END ===========================
 
 echo "--------------------------------"
