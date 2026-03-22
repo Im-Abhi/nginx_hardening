@@ -52,7 +52,7 @@ for file in "$BASE_DIR/checks/request_filtering_restrictions/"*; do
 done
 
 run_control "5.1.1" "Ensure allow and deny filters limit access to specific IP addresses" check_ip_based_restrictions remediate_ip_based_restrictions
-check_client_timeouts
+run_control "5.2.1" "Ensure timeout values for reading the client header and body are set correctly" check_client_timeouts remediate_client_timeouts
 check_client_max_body_size
 check_large_client_header_buffers
 check_limit_conn
