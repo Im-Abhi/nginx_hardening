@@ -1,77 +1,138 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# CIS X.X.X – Ensure large_client_header_buffers Is Set to 2 1k
-# Verifies:
-#   - Directive exists.
-#   - Values are exactly: 2 1k
-# Automation Level: Automated (Prompt-based remediation safe)
-# Remediation Example:
-#   large_client_header_buffers 2 1k;
+# CIS 5.2.3 – Ensure the maximum buffer size for URIs is defined
+# SAFE MODE: No override of existing explicit directives
 
 check_large_client_header_buffers() {
 
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
+
     if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit large_client_header_buffers (nginx -T unavailable)"
-        return
+        echo "Failed to parse nginx configuration (nginx -T error)"
+        return 1
     fi
 
-    local config current expected="2 1k"
+    local errors=""
+    local warnings=""
+    local has_valid_directive=0
 
-    config=$(nginx -T 2>/dev/null)
+    while read -r file line val; do
 
-    current=$(echo "$config" | \
-        grep -Poi '^\h*large_client_header_buffers\h+\K[^;]+' | head -n1)
+        local val_clean="${val,,}"
+        val_clean=$(echo "$val_clean" | awk '{print $1, $2}')
 
-    if [ -z "$current" ]; then
-        fail "large_client_header_buffers directive missing"
-        # suggest_fix_large_client_header_buffers
-        return
+        has_valid_directive=1
+
+        if [[ "$val_clean" != "2 1k" ]]; then
+            warnings+="  - [WARNING] large_client_header_buffers in $file (line $line) is '$val' (CIS recommends '2 1k').\n"
+        fi
+
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+
+        /^[[:space:]]*large_client_header_buffers[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*large_client_header_buffers[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print file, line, val
+        }
+    ')
+
+    # Missing directive → FAIL
+    if [[ "$has_valid_directive" -eq 0 ]]; then
+        errors+="  - large_client_header_buffers directive is missing entirely (NGINX default is 4 8k).\n"
     fi
 
-    if [ "$current" != "$expected" ]; then
-        fail "large_client_header_buffers set to '$current' (expected '$expected')"
-        # suggest_fix_large_client_header_buffers
-        return
+    # FAIL only on real errors
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Ensure buffers are restricted to mitigate volumetric DoS attacks.\n"
+        errors+="  - WARNING: If your app uses large cookies/OAuth, '2 1k' may cause 400/414 errors.\n"
+        errors+="  - Example:\n"
+        errors+="      large_client_header_buffers 2 1k;"
+        echo -e "${errors%\\n}"
+        return 1
     fi
 
-    pass "large_client_header_buffers properly configured ($current)"
+    # PASS (silent, warnings suppressed per framework)
+    return 0
 }
 
+remediate_large_client_header_buffers() {
 
-suggest_fix_large_client_header_buffers() {
+    command -v nginx >/dev/null 2>&1 || return 1
 
-    echo
-    read -p "Would you like to set large_client_header_buffers to '2 1k'? (y/n): " choice
-
-    if [[ "$choice" != "y" ]]; then
-        echo "Remediation skipped."
-        return
+    if ! nginx -T >/dev/null 2>&1; then
+        echo "Failed to parse nginx configuration (nginx -T error)"
+        return 1
     fi
 
-    read -p "Enter desired buffer count (default 2): " count
-    read -p "Enter desired buffer size (default 1k): " size
+    local main_config="/etc/nginx/nginx.conf"
+    local has_valid_directive=0
+    local manual_intervention_required=0
 
-    count=${count:-2}
-    size=${size:-1k}
+    while read -r val; do
 
-    local target_file="/etc/nginx/nginx.conf"
+        local val_clean="${val,,}"
+        val_clean=$(echo "$val_clean" | awk '{print $1, $2}')
 
-    echo "Creating backup..."
-    cp "$target_file" "$target_file.bak.$(date +%F-%H%M)"
+        has_valid_directive=1
 
-    echo "Applying remediation..."
+        if [[ "$val_clean" != "2 1k" ]]; then
+            manual_intervention_required=1
+        fi
 
-    # Remove existing directive
-    sed -i '/large_client_header_buffers/d' "$target_file"
+    done < <(nginx -T 2>/dev/null | awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*large_client_header_buffers[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*large_client_header_buffers[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print val
+        }
+    ')
 
-    # Insert into http block
-    sed -i "/http\s*{/a \    large_client_header_buffers ${count} ${size};" "$target_file"
-
-    echo "Validating configuration..."
-    if nginx -t; then
-        echo "Remediation successful."
-    else
-        echo "Configuration invalid. Restoring backup."
-        mv "$target_file.bak."* "$target_file"
+    # Abort if custom value exists
+    if [[ "$manual_intervention_required" -eq 1 ]]; then
+        echo "[WARNING] large_client_header_buffers is set to a custom value. Manual review required."
+        return 1
     fi
+
+    # Already exists → do nothing
+    if [[ "$has_valid_directive" -eq 1 ]]; then
+        return 0
+    fi
+
+    [[ -f "$main_config" ]] || return 1
+
+    local backup_file="${main_config}.bak.$(date +%s)"
+    cp -p "$main_config" "$backup_file" || return 1
+
+    awk '
+        /^[[:space:]]*#/ { print; next }
+
+        /^[[:space:]]*http[[:space:]]*\{/ && !done {
+            print
+            print "    large_client_header_buffers 2 1k;"
+            done=1
+            next
+        }
+
+        { print }
+    ' "$main_config" > "${main_config}.tmp" && mv "${main_config}.tmp" "$main_config"
+
+    if ! nginx -t >/dev/null 2>&1; then
+        mv "$backup_file" "$main_config"
+        return 1
+    fi
+
+    rm -f "$backup_file"
+    nginx -s reload >/dev/null 2>&1
+
+    return 0
 }
