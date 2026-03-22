@@ -142,7 +142,7 @@ for file in "$BASE_DIR/checks/request_filtering_restrictions/"*; do
     source "$file"
 done
 
-check_ip_based_restrictions
+run_control "5.1.1" "Ensure allow and deny filters limit access to specific IP addresses" check_ip_based_restrictions remediate_ip_based_restrictions
 check_client_timeouts
 check_client_max_body_size
 check_large_client_header_buffers
