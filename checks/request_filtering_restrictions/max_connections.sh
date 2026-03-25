@@ -1,80 +1,96 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# CIS X.X.X – Ensure limit_conn Is Configured
-# Verifies:
-#   - limit_conn_zone is configured in http context.
-#   - limit_conn is configured in server or location context.
-# Automation Level: Automated (Prompt-based remediation safe)
-# Remediation Example:
-#   http {
-#       limit_conn_zone $binary_remote_addr zone=limitperip:10m;
-#       server {
-#           limit_conn limitperip 10;
-#       }
-#   }
+# CIS 5.2.4 – Ensure the number of connections per IP address is limited
+# Automation Level: Manual (SAFE MODE: Auto-remediation disabled to prevent 503 DoS)
 
 check_limit_conn() {
 
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
+
     if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit limit_conn (nginx -T unavailable)"
-        return
+        echo "Failed to parse nginx configuration (nginx -T error)"
+        return 1
     fi
 
-    local config zone limit
+    local errors=""
+    local has_zone=0
+    local has_limit=0
+    local zones_declared=()
+    local limits_applied=()
 
-    config=$(nginx -T 2>/dev/null)
+    # 1. Parse configuration in a single pass
+    while read -r type file line val; do
+        
+        if [[ "$type" == "zone" ]]; then
+            has_zone=1
+            # Verify the zone is actually tracking the IP address
+            if ! [[ "$val" =~ \$binary_remote_addr ]] && ! [[ "$val" =~ \$remote_addr ]]; then
+                errors+="  - [WARNING] limit_conn_zone in $file (line $line) does not appear to track IP addresses (\$binary_remote_addr).\n"
+            fi
+            zones_declared+=("$val")
+            
+        elif [[ "$type" == "limit" ]]; then
+            has_limit=1
+            limits_applied+=("Found in $file (line $line): limit_conn $val;")
+        fi
 
-    zone=$(echo "$config" | \
-        grep -Pi '^\h*limit_conn_zone\h+\$binary_remote_addr')
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
 
-    limit=$(echo "$config" | \
-        grep -Pi '^\h*limit_conn\h+limitperip\h+[0-9]+')
+        /^[[:space:]]*limit_conn_zone[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*limit_conn_zone[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print "zone", file, line, val
+        }
 
-    if [ -z "$zone" ]; then
-        fail "limit_conn_zone not configured"
-        # suggest_fix_limit_conn
-        return
+        /^[[:space:]]*limit_conn[[:space:]]+/ {
+            val=$0
+            sub(/^[[:space:]]*limit_conn[[:space:]]+/, "", val)
+            sub(/;[[:space:]]*$/, "", val)
+            print "limit", file, line, val
+        }
+    ')
+
+    # 2. Evaluate State
+    if [[ "$has_zone" -eq 0 ]]; then
+        errors+="  - 'limit_conn_zone' directive is missing (Shared memory zone not defined).\n"
     fi
 
-    if [ -z "$limit" ]; then
-        fail "limit_conn not configured in server context"
-        # suggest_fix_limit_conn
-        return
+    if [[ "$has_limit" -eq 0 ]]; then
+        errors+="  - 'limit_conn' directive is missing (Connection limit is not actively enforced).\n"
     fi
 
-    pass "Connection limiting properly configured"
+    # 3. Output results and return 1 for wrapper framework compatibility
+    if [[ -n "$errors" ]]; then
+        errors+="\n  Remediation Guidance:\n"
+        errors+="  - Ensure connection limits are configured to mitigate DoS/DDoS attacks.\n"
+        errors+="  - Define the memory zone in your 'http' block:\n"
+        errors+="      limit_conn_zone \$binary_remote_addr zone=limitperip:10m;\n"
+        errors+="  - Enforce the limit in the appropriate 'server' or 'location' block:\n"
+        errors+="      limit_conn limitperip 10;"
+        
+        echo -e "${errors%\\n}"
+        return 1
+    fi
+
+    # SUCCESS: Exiting completely silently
+    return 0
 }
 
-suggest_fix_limit_conn() {
+remediate_limit_conn() {
 
-    echo
-    read -p "Would you like to configure connection limits? (y/n): " choice
-    if [[ "$choice" != "y" ]]; then
-        echo "Remediation skipped."
-        return
-    fi
-
-    read -p "Enter max connections per IP (default 10): " max_conn
-    max_conn=${max_conn:-10}
-
-    local target_file="/etc/nginx/nginx.conf"
-
-    echo "Creating backup..."
-    cp "$target_file" "$target_file.bak.$(date +%F-%H%M)"
-
-    echo "Applying remediation..."
-
-    # Insert limit_conn_zone inside http block
-    sed -i "/http\s*{/a \    limit_conn_zone \$binary_remote_addr zone=limitperip:10m;" "$target_file"
-
-    # Insert limit_conn inside first server block
-    sed -i "/server\s*{/a \        limit_conn limitperip ${max_conn};" "$target_file"
-
-    echo "Validating configuration..."
-    if nginx -t; then
-        echo "Remediation successful."
-    else
-        echo "Configuration invalid. Restoring backup."
-        mv "$target_file.bak."* "$target_file"
-    fi
+    # SAFE MODE: Auto-remediation intentionally aborted.
+    # Blindly injecting a limit_conn value (e.g., 10) can instantly break applications, 
+    # block legitimate NAT/Corporate IP traffic, and cause 503 Service Unavailable errors.
+    
+    # echo "[WARNING] CIS 5.2.4 requires application-specific traffic tuning."
+    # echo "SAFE MODE: Auto-remediation aborted to prevent accidental DoS/503 errors. Please apply connection limits manually."
+    
+    return 1
 }
