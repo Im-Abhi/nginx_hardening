@@ -58,7 +58,7 @@ run_control "5.2.3" "Ensure the maximum buffer size for URIs is defined" check_l
 run_control "5.2.4" "Ensure the number of connections per IP address is limited" check_limit_conn remediate_limit_conn
 run_control "5.2.5" "Ensure rate limits by IP address are set" check_rate_limit_ip remediate_rate_limit_ip
 run_control "5.3.1" "Ensure X-Frame-Options header is configured and enabled" check_x_frame_options remediate_x_frame_options
-check_x_content_type_options
+run_control "5.3.2" "Ensure X-Content-Type-Options header is configured and enabled" check_x_content_type_options remediate_x_content_type_options
 check_content_security_policy
 check_referrer_policy
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
