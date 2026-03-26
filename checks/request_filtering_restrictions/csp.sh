@@ -1,87 +1,90 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# CIS X.X.X – Ensure Content-Security-Policy Header Is Configured on All Server Blocks
-# Verifies:
-#   - Each server block contains:
-#       add_header Content-Security-Policy "... default-src 'self' ..." always;
-# Automation Level: Partial (Prompt-based remediation safe)
-# Notes:
-#   - CSP policies are application-specific.
-#   - This only checks for presence of default-src 'self'.
-#   - Custom CSP values are allowed if they include default-src.
-# Remediation Example:
-#   add_header Content-Security-Policy "default-src 'self'" always;
+# CIS 5.3.3 – Ensure that Content Security Policy (CSP) is enabled and configured properly
+# Automation Level: Manual (Auto-remediation disabled to prevent application breakage)
 
 check_content_security_policy() {
 
+    command -v nginx >/dev/null 2>&1 || {
+        echo "nginx binary not found"
+        return 1
+    }
+
     if ! nginx -T >/dev/null 2>&1; then
-        fail "cannot audit Content-Security-Policy (nginx -T unavailable)"
-        return
+        echo "Failed to parse nginx configuration (nginx -T error)"
+        return 1
     fi
 
-    local config server_count compliant_count
+    local findings=""
+    local has_csp=0
 
-    config=$(nginx -T 2>/dev/null)
+    while read -r file line val; do
+        has_csp=1
 
-    server_count=$(echo "$config" | grep -c '^\h*server\s*{')
+        local val_upper="${val^^}"
+        val_upper="$(echo "$val_upper" | awk '{$1=$1; print}')"
+        local policy=""
 
-    compliant_count=$(echo "$config" | \
-        awk '
-        BEGIN { in_server=0; has_csp=0; total=0 }
-        /^\s*server\s*{/ { in_server=1; has_csp=0 }
-        in_server && /add_header\s+Content-Security-Policy/ &&
-        /default-src/ && /always;/ { has_csp=1 }
-        in_server && /^\s*}/ {
-            if (has_csp) total++
-            in_server=0
+        if ! [[ "$val_upper" =~ (^|[[:space:]])ALWAYS($|[[:space:]]) ]]; then
+            findings+="  - [ERROR] Content-Security-Policy in $file (line $line) is missing the 'always' parameter.\n"
+        fi
+
+        policy="${val_upper% ALWAYS}"
+        policy="${policy#ALWAYS }"
+
+        if [[ -z "$policy" ]] || ! [[ "$policy" =~ [A-Z] ]]; then
+            findings+="  - [ERROR] Content-Security-Policy in $file (line $line) appears empty or malformed: '$val'\n"
+        fi
+
+        if [[ "$policy" =~ UNSAFE-INLINE ]]; then
+            findings+="  - [WARNING] Content-Security-Policy in $file (line $line) uses 'unsafe-inline', weakening XSS protection.\n"
+        fi
+
+        if [[ "$policy" =~ UNSAFE-EVAL ]]; then
+            findings+="  - [WARNING] Content-Security-Policy in $file (line $line) uses 'unsafe-eval', weakening script execution protections.\n"
+        fi
+
+    done < <(nginx -T 2>/dev/null | awk '
+        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
+        { line++ }
+        /^[[:space:]]*#/ { next }
+
+        /^[[:space:]]*add_header[[:space:]]+/ {
+            line_val=$0
+            sub(/^[[:space:]]*add_header[[:space:]]+/, "", line_val)
+            sub(/;[[:space:]]*$/, "", line_val)
+
+            # Match Content-Security-Policy (case-insensitive, optional quotes)
+            if (match(line_val, /^["\047]?[Cc][Oo][Nn][Tt][Ee][Nn][Tt]-[Ss][Ee][Cc][Uu][Rr][Ii][Tt][Yy]-[Pp][Oo][Ll][Ii][Cc][Yy]["\047]?[[:space:]]+/)) {
+                val = substr(line_val, RLENGTH + 1)
+                gsub(/["\047]/, "", val)
+                print file, line, val
+            }
         }
-        END { print total }
-        ')
+    ')
 
-    if [ "$server_count" -eq 0 ]; then
-        fail "No server blocks detected"
-        return
+    if [[ "$has_csp" -eq 0 ]]; then
+        findings+="  - [ERROR] 'Content-Security-Policy' header is not configured.\n"
     fi
 
-    if [ "$compliant_count" -ne "$server_count" ]; then
-        fail "Content-Security-Policy not configured on all server blocks"
-        # suggest_fix_content_security_policy
-        return
+    if [[ -n "$findings" ]]; then
+        findings+="\n  Remediation Guidance:\n"
+        findings+="  - Configure a Content-Security-Policy (CSP) to mitigate Cross-Site Scripting (XSS).\n"
+        findings+="  - CSP policies are highly application-specific. Work with developers to map required origins.\n"
+        findings+="  - Avoid using 'unsafe-inline' and 'unsafe-eval' unless absolutely necessary.\n"
+        findings+="  - Example baseline directive (Add to 'http' or 'server' block):\n"
+        findings+="      add_header Content-Security-Policy \"default-src 'self'\" always;"
+
+        echo -e "${findings%\\n}"
+        return 1
     fi
 
-    pass "Content-Security-Policy configured on all server blocks"
+    return 0
 }
 
-suggest_fix_content_security_policy() {
+remediate_content_security_policy() {
 
-    echo
-    read -p "Would you like to add a default CSP (default-src 'self') to all server blocks? (y/n): " choice
-    if [[ "$choice" != "y" ]]; then
-        echo "Remediation skipped."
-        return
-    fi
-
-    local target_file="/etc/nginx/nginx.conf"
-
-    echo "WARNING: CSP can break applications if external resources are used."
-    read -p "Proceed? (y/n): " confirm
-    if [[ "$confirm" != "y" ]]; then
-        echo "Remediation cancelled."
-        return
-    fi
-
-    echo "Creating backup..."
-    cp "$target_file" "$target_file.bak.$(date +%F-%H%M)"
-
-    echo "Applying remediation..."
-
-    sed -i "/server\s*{/a \    add_header Content-Security-Policy \"default-src 'self'\" always;" "$target_file"
-
-    echo "Validating configuration..."
-    if nginx -t; then
-        echo "Remediation successful."
-    else
-        echo "Configuration invalid. Restoring backup."
-        mv "$target_file.bak."* "$target_file"
-    fi
+    # Blindly injecting a strict CSP (e.g., "default-src 'self'") can break applications
+    # relying on CDNs, external APIs, inline scripts, or external fonts.
+    return 1
 }
