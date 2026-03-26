@@ -60,7 +60,7 @@ run_control "5.2.5" "Ensure rate limits by IP address are set" check_rate_limit_
 run_control "5.3.1" "Ensure X-Frame-Options header is configured and enabled" check_x_frame_options remediate_x_frame_options
 run_control "5.3.2" "Ensure X-Content-Type-Options header is configured and enabled" check_x_content_type_options remediate_x_content_type_options
 run_control "5.3.3" "Ensure that Content Security Policy (CSP) is enabled and configured properly" check_content_security_policy remediate_content_security_policy
-check_referrer_policy
+run_control "5.3.4" "Ensure the Referrer Policy is enabled and configured properly" check_referrer_policy remediate_referrer_policy
 # ============= REQUEST FILTERING & RESTRICTIONS END ===============
 
 echo "--------------------------------"
