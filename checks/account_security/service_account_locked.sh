@@ -6,57 +6,59 @@
 check_service_account_locked() {
     local config
     local service_user
+    local shadow_status
 
-    # -------- Prerequisite --------
     if ! config="$(nginx -T 2>/dev/null)"; then
-        manual "2.2.2 service account lock check (nginx configuration dump failed)"
-        return
+        echo "nginx configuration dump failed (manual verification required)"
+        return 1
     fi
 
     # -------- Extract nginx service user --------
-    service_user=$(echo "$config" \
+    service_user="$(
+        echo "$config" \
         | grep -Evi '^[[:space:]]*#' \
-        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}'
+    )"
 
     if [[ -z "$service_user" ]]; then
-        handle_failure "2.2.2 nginx user directive missing" remediate_service_account_locked
-        return
+        echo "nginx user directive missing"
+        return 1
     fi
 
     if ! id "$service_user" >/dev/null 2>&1; then
-        handle_failure "2.2.2 OS account '$service_user' does not exist" remediate_service_account_locked
-        return
+        echo "OS account '$service_user' does not exist"
+        return 1
     fi
 
     # -------- Check if account is locked --------
-    local shadow_status
-    shadow_status=$(passwd -S "$service_user" 2>/dev/null | awk '{print $2}')
+    shadow_status="$(passwd -S "$service_user" 2>/dev/null | awk '{print $2}')"
 
     if [[ "$shadow_status" == "L" ]]; then
-        pass "2.2.2 nginx service account '$service_user' is locked"
-        return
+        return 0
     fi
 
-    handle_failure "2.2.2 nginx service account '$service_user' is not locked" remediate_service_account_locked
+    echo "nginx service account '$service_user' is not locked"
+    return 1
 }
 
 remediate_service_account_locked() {
-    local service_user
     local config
+    local service_user
 
     if ! config="$(nginx -T 2>/dev/null)"; then
         return 1
     fi
 
-    service_user=$(echo "$config" \
+    service_user="$(
+        echo "$config" \
         | grep -Evi '^[[:space:]]*#' \
-        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}'
+    )"
 
     if [[ -z "$service_user" ]]; then
         return 1
     fi
 
-    # Do NOT modify if user not present
     if ! id "$service_user" >/dev/null 2>&1; then
         return 1
     fi

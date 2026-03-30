@@ -49,7 +49,7 @@ for file in "$BASE_DIR/checks/minimize_modules/"*; do
     source "$file"
 done
 
-check_autoindex
+run_control "2.1.4" "Ensure the autoindex module is disabled" check_autoindex remediate_autoindex
 # =================== MINIMIZE MODULES END ===========================
 
 
@@ -59,9 +59,9 @@ for file in "$BASE_DIR/checks/account_security/"*; do
     source "$file"
 done
 
-check_dedicated_service_account
-check_service_account_locked
-check_invalid_shell
+run_control "2.2.1" "Ensure NGINX runs as a non-privileged dedicated service account" check_dedicated_service_account remediate_dedicated_service_account
+run_control "2.2.2" "Ensure the NGINX service account is locked" check_service_account_locked remediate_service_account_locked
+run_control "2.2.3" "Ensure the NGINX service account has a non-login shell" check_invalid_shell remediate_invalid_shell
 # =================== ACCOUNT SECURITY END ===========================
 
 

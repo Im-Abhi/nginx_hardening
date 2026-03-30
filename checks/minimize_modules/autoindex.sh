@@ -4,17 +4,19 @@
 # Automation Level: Automated
 
 check_autoindex() {
-    local config failed=0
+    local config
+    local failed=0
 
     if ! config="$(nginx -T 2>/dev/null)"; then
-        fail "2.1.4 nginx configuration dump failed"
-        return
+        echo "nginx configuration dump failed"
+        return 1
     fi
 
     local re_autoindex_on='^[[:space:]]*autoindex[[:space:]]+[Oo][Nn][[:space:]]*;[[:space:]]*$'
 
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
         if [[ "$line" =~ $re_autoindex_on ]]; then
             failed=1
             break
@@ -22,17 +24,17 @@ check_autoindex() {
     done <<< "$config"
 
     if [[ "$failed" -eq 0 ]]; then
-        pass "2.1.4 autoindex is disabled"
-        return
+        return 0
     fi
 
-    handle_failure "2.1.4 autoindex is enabled" remediate_autoindex
+    echo "autoindex is enabled"
+    return 1
 }
 
 remediate_autoindex() {
     local files
-    local -a modified_files
-    local -a backup_files
+    local -a modified_files=()
+    local -a backup_files=()
 
     if ! files="$(nginx -T 2>/dev/null | awk '/^# configuration file /{print $4}' | sed 's/:$//')"; then
         return 1
@@ -43,11 +45,12 @@ remediate_autoindex() {
 
         if grep -Eqi '^[[:space:]]*autoindex[[:space:]]+on[[:space:]]*;' "$file"; then
             local backup="${file}.bak.$(date +%s%N)"
-            cp "$file" "$backup" || return 1
+
+            cp -- "$file" "$backup" || return 1
 
             sed -i -E \
                 's/^([[:space:]]*)autoindex[[:space:]]+[Oo][Nn]([[:space:]]*;)/\1autoindex off\2/g' \
-                "$file"
+                "$file" || return 1
 
             modified_files+=("$file")
             backup_files+=("$backup")
@@ -55,17 +58,19 @@ remediate_autoindex() {
     done <<< "$files"
 
     if ! nginx -t >/dev/null 2>&1; then
+        local i
         for i in "${!modified_files[@]}"; do
-            mv "${backup_files[$i]}" "${modified_files[$i]}"
+            mv -- "${backup_files[$i]}" "${modified_files[$i]}"
         done
         return 1
     fi
 
     if [[ "${#modified_files[@]}" -gt 0 ]]; then
-        nginx -s reload >/dev/null 2>&1
+        nginx -s reload >/dev/null 2>&1 || return 1
 
+        local backup
         for backup in "${backup_files[@]}"; do
-            rm -f "$backup"
+            rm -f -- "$backup"
         done
 
         return 0

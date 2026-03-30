@@ -8,44 +8,43 @@ check_invalid_shell() {
     local service_user
     local user_shell
 
-    # -------- Prerequisite: NGINX Config --------
     if ! config="$(nginx -T 2>/dev/null)"; then
-        manual "2.2.3 invalid shell check (nginx configuration dump failed)"
-        return
+        echo "nginx configuration dump failed (manual verification required)"
+        return 1
     fi
 
     # -------- Extract nginx service user (ignore comments) --------
-    service_user=$(echo "$config" \
+    service_user="$(
+        echo "$config" \
         | grep -Evi '^[[:space:]]*#' \
-        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}'
+    )"
 
     if [[ -z "$service_user" ]]; then
-        handle_failure "2.2.3 nginx user directive is missing" remediate_invalid_shell
-        return
+        echo "nginx user directive is missing"
+        return 1
     fi
 
     if ! id "$service_user" >/dev/null 2>&1; then
-        handle_failure "2.2.3 OS account '$service_user' does not exist" remediate_invalid_shell
-        return
+        echo "OS account '$service_user' does not exist"
+        return 1
     fi
 
     # -------- Get current shell --------
-    user_shell=$(getent passwd "$service_user" | cut -d: -f7)
+    user_shell="$(getent passwd "$service_user" | cut -d: -f7)"
 
     if [[ -z "$user_shell" ]]; then
-        pass "2.2.3 nginx service account '$service_user' has no shell configured"
-        return
+        return 0
     fi
 
     # -------- Enforce explicit non-login shells --------
     case "$user_shell" in
         "/sbin/nologin"|"/usr/sbin/nologin"|"/bin/false")
-            pass "2.2.3 nginx service account '$service_user' has non-login shell ($user_shell)"
+            return 0
             ;;
         *)
-            handle_failure \
-            "2.2.3 nginx service account '$service_user' has a login shell ('$user_shell')" \
-            remediate_invalid_shell
+            echo "nginx service account '$service_user' has a login shell ('$user_shell')"
+            return 1
             ;;
     esac
 }
@@ -59,9 +58,11 @@ remediate_invalid_shell() {
         return 1
     fi
 
-    service_user=$(echo "$config" \
+    service_user="$(
+        echo "$config" \
         | grep -Evi '^[[:space:]]*#' \
-        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}')
+        | awk '/^[[:space:]]*user[[:space:]]+/{sub(/;/,"",$2); print $2; exit}'
+    )"
 
     if [[ -z "$service_user" ]]; then
         return 1
