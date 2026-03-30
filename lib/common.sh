@@ -46,24 +46,33 @@ run_control() {
     local check_function="$3"
     local remediate_function="$4"
 
-    local errors
-    errors="$($check_function)"
+    local output
+    output="$($check_function)"
 
-    if [[ -z "$errors" ]]; then
+    # -------- PASS --------
+    if [[ -z "$output" ]]; then
         pass "$control_id $control_name"
         return
     fi
 
-    if [[ "$MODE" == "remediate" ]]; then
+    # -------- MANUAL --------
+    if [[ "$output" == MANUAL:* ]]; then
+        manual "$control_id $control_name"
+        echo -e "${output#MANUAL:}"
+        return
+    fi
+
+    # -------- FAIL / REMEDIATE --------
+    if [[ "$MODE" == "remediate" && -n "$remediate_function" ]]; then
         if "$remediate_function"; then
             remediated "$control_id $control_name"
         else
             fail "$control_id $control_name"
-            echo -e "$errors"
+            echo -e "$output"
         fi
     else
         fail "$control_id $control_name"
-        echo -e "$errors"
+        echo -e "$output"
     fi
 }
 

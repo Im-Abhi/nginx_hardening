@@ -5,9 +5,9 @@
 
 _get_nginx_conf_dir() {
     local conf_path
-    conf_path=$(nginx -V 2>&1 \
+    conf_path="$(nginx -V 2>&1 \
         | grep -o -- '--conf-path=[^ ]*' \
-        | cut -d= -f2)
+        | cut -d= -f2)"
 
     if [[ -n "$conf_path" ]]; then
         dirname "$conf_path"
@@ -18,42 +18,38 @@ _get_nginx_conf_dir() {
 
 check_files_directories_owner() {
     local conf_dir
-    conf_dir=$(_get_nginx_conf_dir)
+    local non_compliant
+
+    conf_dir="$(_get_nginx_conf_dir)"
 
     if [[ ! -d "$conf_dir" ]]; then
-        manual "2.3.1 ownership check failed (directory '$conf_dir' not found)"
-        return
+        echo "ownership check failed (directory '$conf_dir' not found)"
+        return 1
     fi
 
-    local non_compliant
-    non_compliant=$(find "$conf_dir" -xdev \
+    non_compliant="$(find "$conf_dir" -xdev \
         \( ! -user root -o ! -group root \) \
-        -printf "  - %p\n" 2>/dev/null)
+        -printf "  - %p\n" 2>/dev/null)"
 
     if [[ -z "$non_compliant" ]]; then
-        pass "2.3.1 all files and directories in '$conf_dir' are owned by root:root"
-    else
-        handle_failure \
-        "2.3.1 found files/directories not owned by root:root:\n$non_compliant" \
-        remediate_files_directories_owner
+        return 0
     fi
+
+    echo -e "found files/directories not owned by root:root:\n$non_compliant"
+    return 1
 }
 
 remediate_files_directories_owner() {
     local conf_dir
-    conf_dir=$(_get_nginx_conf_dir)
+    conf_dir="$(_get_nginx_conf_dir)"
 
     if [[ ! -d "$conf_dir" ]]; then
         return 1
     fi
 
-    # Only fix non-compliant entries
-    if ! find "$conf_dir" -xdev \
+    find "$conf_dir" -xdev \
         \( ! -user root -o ! -group root \) \
-        -exec chown root:root {} + \
-        >/dev/null 2>&1; then
-        return 1
-    fi
+        -exec chown root:root {} + >/dev/null 2>&1 || return 1
 
     return 0
 }

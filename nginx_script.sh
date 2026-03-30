@@ -70,10 +70,11 @@ for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
     source "$file"
 done
 
-check_files_directories_owner
-check_files_directories_access
-check_nginx_pid_file
-check_core_dump_directory
+run_control "2.3.1" "Ensure NGINX directories and files are owned by root" check_files_directories_owner remediate_files_directories_owner
+run_control "2.3.2" "Ensure access to NGINX directories and files is restricted" check_files_directories_access remediate_files_directories_access
+run_control "2.3.3" "Ensure the NGINX PID file is secured" check_nginx_pid_file remediate_nginx_pid_file
+run_control "2.3.4" "Ensure the core dump directory is secured" check_core_dump_directory remediate_core_dump_directory
+
 # ================== PERMISSIONS & OWNERSHIP END ======================
 
 
