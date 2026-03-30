@@ -99,7 +99,7 @@ done
 run_control "2.5.1" "Ensure server_tokens directive is set to off" check_server_tokens remediate_server_tokens
 run_control "2.5.2" "Ensure default error and index.html pages do not reference NGINX" check_default_pages_branding remediate_default_pages_branding
 run_control "2.5.3" "Ensure hidden file serving is disabled" check_hidden_files_disabled remediate_hidden_files_disabled
-run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure" check_reverse_proxy remediate_reverse_proxy
+run_control "2.5.4" "Ensure the NGINX reverse proxy does not enable information disclosure" check_proxy_hide_headers remediate_proxy_hide_headers
 # =================== INFORMATION DISCLOSURE END ===========================
 
 
@@ -148,7 +148,7 @@ run_control "5.2.1" "Ensure timeout values for reading the client header and bod
 run_control "5.2.2" "Ensure the maximum request body size is set correctly" check_client_max_body_size remediate_client_max_body_size
 run_control "5.2.3" "Ensure the maximum buffer size for URIs is defined" check_large_client_header_buffers remediate_large_client_header_buffers
 run_control "5.2.4" "Ensure the number of connections per IP address is limited" check_limit_conn remediate_limit_conn
-run_control "5.2.5" "Ensure rate limits by IP address are set" check_rate_limit_ip remediate_rate_limit_ip
+run_control "5.2.5" "Ensure rate limits by IP address are set" check_ip_rate_limits remediate_ip_rate_limits
 run_control "5.3.1" "Ensure X-Frame-Options header is configured and enabled" check_x_frame_options remediate_x_frame_options
 run_control "5.3.2" "Ensure X-Content-Type-Options header is configured and enabled" check_x_content_type_options remediate_x_content_type_options
 run_control "5.3.3" "Ensure that Content Security Policy (CSP) is enabled and configured properly" check_content_security_policy remediate_content_security_policy

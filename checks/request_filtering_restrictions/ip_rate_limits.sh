@@ -1,114 +1,97 @@
 #!/usr/bin/env bash
 
-# CIS 5.2.4 – Ensure the number of connections per IP address is limited
-# Automation Level: Manual (SAFE MODE: Auto-remediation disabled)
+# CIS 5.2.5 – Ensure rate limits by IP address are set
+# Automation Level: Manual
 
-check_limit_conn() {
+check_ip_rate_limits() {
+    local config_dump=""
+    local findings=""
 
-    command -v nginx >/dev/null 2>&1 || {
-        echo "nginx binary not found"
-        return 1
-    }
-
-    if ! nginx -T >/dev/null 2>&1; then
-        echo "Failed to parse nginx configuration (nginx -T error)"
-        return 1
+    # -------- Prerequisite --------
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo "MANUAL: nginx binary not found"
+        return 0
     fi
 
-    local errors=""
-    local has_zone=0
-    local has_limit=0
-    local zone_names=()
-    local limit_refs=()
+    if ! nginx -t >/dev/null 2>&1; then
+        echo "MANUAL: nginx configuration invalid"
+        return 0
+    fi
 
-    while read -r type file line val; do
+    if ! config_dump="$(nginx -T 2>/dev/null)"; then
+        echo "MANUAL: nginx configuration dump failed"
+        return 0
+    fi
 
-        if [[ "$type" == "zone" ]]; then
-            has_zone=1
-
-            # Extract first token (key variable) and zone name
-            local key_var zone_name
-            key_var="${val%% *}"
-
-            if [[ "$val" =~ zone=([^:;[:space:]]+) ]]; then
-                zone_name="${BASH_REMATCH[1]}"
-                zone_names+=("$zone_name")
-            fi
-
-            if [[ "$key_var" != "\$binary_remote_addr" && "$key_var" != "\$remote_addr" ]]; then
-                errors+="  - [WARNING] limit_conn_zone in $file (line $line) does not track client IPs (found: $key_var).\n"
-            fi
-
-        elif [[ "$type" == "limit" ]]; then
-            has_limit=1
-
-            local zone_ref
-            zone_ref="${val%% *}"
-            limit_refs+=("$zone_ref")
-        fi
-
-    done < <(nginx -T 2>/dev/null | awk '
-        /^# configuration file/ { file=$4; sub(/:$/,"",file); line=0; next }
-        { line++ }
+    # -------- 1. Check for limit_req_zone in http context --------
+    # Benchmark expects something like:
+    #   limit_req_zone $binary_remote_addr zone=ratelimit:10m rate=5r/s;
+    if ! echo "$config_dump" | awk '
+        BEGIN { in_http=0; depth=0; found=0 }
         /^[[:space:]]*#/ { next }
 
-        $1 == "limit_conn_zone" {
-            val=$0
-            sub(/^[[:space:]]*limit_conn_zone[[:space:]]+/, "", val)
-            sub(/;[[:space:]]*$/, "", val)
-            print "zone", file, line, val
+        /^[[:space:]]*http[[:space:]]*\{/ {
+            in_http=1
+            depth=1
+            next
         }
 
-        $1 == "limit_conn" {
-            val=$0
-            sub(/^[[:space:]]*limit_conn[[:space:]]+/, "", val)
-            sub(/;[[:space:]]*$/, "", val)
-            print "limit", file, line, val
+        in_http {
+            opens = gsub(/\{/, "{")
+            closes = gsub(/\}/, "}")
+
+            if (depth == 1 && $0 ~ /^[[:space:]]*limit_req_zone[[:space:]]+\$binary_remote_addr[[:space:]]+zone=[^:;[:space:]]+:[0-9]+[kKmM]?[[:space:]]+rate=[0-9]+r\/[smhd][[:space:]]*;/) {
+                found=1
+            }
+
+            depth += opens
+            depth -= closes
+
+            if (depth <= 0) {
+                in_http=0
+                depth=0
+            }
         }
-    ')
 
-    if [[ "$has_zone" -eq 0 ]]; then
-        errors+="  - 'limit_conn_zone' directive is missing (shared memory zone not defined).\n"
+        END { exit(found ? 0 : 1) }
+    '; then
+        findings+="  - No compliant 'limit_req_zone \$binary_remote_addr ... rate=...' directive found in the http{} context"$'\n'
     fi
 
-    if [[ "$has_limit" -eq 0 ]]; then
-        errors+="  - 'limit_conn' directive is missing (connection limit is not actively enforced).\n"
+    # -------- 2. Check for active limit_req enforcement --------
+    # Benchmark expects something like:
+    #   limit_req zone=ratelimit burst=10 nodelay;
+    if ! echo "$config_dump" | grep -Eq '^[[:space:]]*limit_req[[:space:]]+zone=[^;[:space:]]+([[:space:]]+burst=[0-9]+)?([[:space:]]+nodelay)?[[:space:]]*;'; then
+        findings+="  - No active 'limit_req zone=...' directive found in any server/location context"$'\n'
     fi
 
-    # Validate that limit_conn references a declared zone
-    if [[ "$has_zone" -eq 1 && "$has_limit" -eq 1 ]]; then
-        local ref found
-        for ref in "${limit_refs[@]}"; do
-            found=0
-            for zn in "${zone_names[@]}"; do
-                [[ "$ref" == "$zn" ]] && found=1 && break
-            done
-            if [[ "$found" -eq 0 ]]; then
-                errors+="  - limit_conn references undeclared zone '$ref'.\n"
-            fi
-        done
+    # -------- 3. Optional benchmark-shape guidance --------
+    # This is not strict fail logic, but helps benchmark alignment
+    if echo "$config_dump" | grep -Eq '^[[:space:]]*limit_req_zone[[:space:]]+\$remote_addr'; then
+        findings+="  - [INFO] 'limit_req_zone' uses \$remote_addr instead of the benchmark-recommended \$binary_remote_addr"$'\n'
     fi
 
-    if [[ -n "$errors" ]]; then
-        errors+="\n  Remediation Guidance:\n"
-        errors+="  - Define a shared memory zone in the 'http' block:\n"
-        errors+="      limit_conn_zone \$binary_remote_addr zone=limitperip:10m;\n"
-        errors+="  - Apply the limit in the relevant 'server' or 'location' block:\n"
-        errors+="      limit_conn limitperip 10;\n"
-        errors+="  - IMPORTANT: Tune the value to your application's real traffic profile to avoid 503 errors."
-
-        echo -e "${errors%\\n}"
-        return 1
+    # -------- Final Reporting --------
+    if [[ -z "$findings" ]]; then
+        return 0
     fi
+
+    echo -e "MANUAL: IP rate limiting review required:\n${findings%$'\n'}\n\
+\nRemediation Guidance:\n\
+  - Define a request rate limiting zone in the http{} block, for example:\n\n\
+        limit_req_zone \$binary_remote_addr zone=ratelimit:10m rate=5r/s;\n\n\
+  - Apply the rate limit in the relevant server{} or location{} block, for example:\n\n\
+        location / {\n\
+            limit_req zone=ratelimit burst=10 nodelay;\n\
+        }\n\n\
+  - Tune the zone name, rate, and burst values to your application's real traffic profile."
 
     return 0
 }
 
-remediate_limit_conn() {
-
+remediate_ip_rate_limits() {
     # Intentionally manual:
-    # Blindly applying connection limits can block legitimate traffic,
-    # especially behind NAT, load balancers, or shared IPs.
-
+    # Blindly enforcing request rate limits can break APIs, shared-IP clients,
+    # health checks, CDNs, and burst-heavy legitimate traffic.
     return 1
 }
