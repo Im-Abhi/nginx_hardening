@@ -4,24 +4,24 @@
 # Automation Level: Manual
 
 check_listen_ports() {
-    # Dynamically allow environment overrides, default to 80 and 443
     local authorized_ports_str="${NGINX_AUTHORIZED_PORTS:-80 443}"
     local -a authorized_ports=($authorized_ports_str)
-    
-    local errors=""
+
+    local findings=""
     local current_file=""
     local line_number=0
+    local line
+    local listen_re='^[[:space:]]*listen[[:space:]]+(.+)[[:space:]]*;[[:space:]]*$'
 
     # -------- Prerequisite --------
     if ! nginx -t >/dev/null 2>&1; then
-        manual "2.4.1 nginx configuration invalid"
-        return
+        echo "MANUAL: nginx configuration invalid"
+        return 0
     fi
 
-    # -------- Parse Configuration --------
-    # Loop over the live config dump to evaluate every included file natively
+    # -------- Parse live expanded config --------
     while IFS= read -r line; do
-        # Track the current file context from the nginx -T headers
+        # Track file context from nginx -T output
         if [[ "$line" =~ ^#\ configuration\ file\ (.*):$ ]]; then
             current_file="${BASH_REMATCH[1]}"
             line_number=0
@@ -30,52 +30,69 @@ check_listen_ports() {
 
         ((line_number++))
 
-        # Skip comments and empty lines
+        # Skip comments and blank lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// }" ]] && continue
+        [[ -z "${line//[[:space:]]/}" ]] && continue
 
-        # Detect listen directives
-        if [[ "$line" =~ ^[[:space:]]*listen[[:space:]]+ ]]; then
-            
+        # Match listen directives safely
+        if [[ "$line" =~ $listen_re ]]; then
+            local listen_args="${BASH_REMATCH[1]}"
+            local port=""
+            local is_authorized=0
+            local clean_line
+
+            clean_line="$(echo "$line" | sed 's/^[[:space:]]*//')"
+
             # Skip unix domain sockets
-            [[ "$line" =~ unix: ]] && continue
+            [[ "$listen_args" =~ unix: ]] && continue
 
-            # Extract the port (handles standard, IPv4, and IPv6 bracket formats securely)
-            local port
-            port=$(echo "$line" | grep -oE '[0-9]{2,5}' | head -n1)
-            
-            if [[ -n "$port" ]]; then
-                local is_authorized=0
-                
-                # Check if extracted port matches any in our allowed array
-                for allowed in "${authorized_ports[@]}"; do
-                    if [[ "$port" == "$allowed" ]]; then
-                        is_authorized=1
-                        break
-                    fi
-                done
+            # Case 1: explicit :port (IPv4, hostname, *, IPv6 in brackets)
+            if [[ "$listen_args" =~ :([0-9]{1,5})([[:space:]]|$) ]]; then
+                port="${BASH_REMATCH[1]}"
 
-                # If unauthorized, log the exact file, line, and config syntax
-                if [[ "$is_authorized" -eq 0 ]]; then
-                    local clean_line
-                    clean_line=$(echo "$line" | sed 's/^[ \t]*//') # Trim leading whitespace
-                    errors+="  - Unauthorized Port: $port | File: $current_file | Line: $line_number | $clean_line\n"
+            # Case 2: bare numeric port
+            elif [[ "$listen_args" =~ ^[[:space:]]*([0-9]{1,5})([[:space:]]|$) ]]; then
+                port="${BASH_REMATCH[1]}"
+            fi
+
+            # Skip if no numeric port extracted
+            [[ -z "$port" ]] && continue
+
+            # Validate port range
+            if ! [[ "$port" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+                findings+="  - Invalid listen port detected | File: ${current_file:-unknown} | Line: $line_number | $clean_line"$'\n'
+                continue
+            fi
+
+            # Check against authorized list
+            for allowed in "${authorized_ports[@]}"; do
+                if [[ "$port" == "$allowed" ]]; then
+                    is_authorized=1
+                    break
                 fi
+            done
+
+            if (( is_authorized == 0 )); then
+                findings+="  - Unauthorized Port: $port | File: ${current_file:-unknown} | Line: $line_number | $clean_line"$'\n'
             fi
         fi
     done < <(nginx -T 2>/dev/null)
 
     # -------- Final Reporting --------
-    if [[ -z "$errors" ]]; then
-        pass "2.4.1 Only authorized listen ports configured (${authorized_ports[*]})"
-    else
-        local remediation=""
-        remediation+="\n  Remediation Guidance:\n"
-        remediation+="  - Review the unauthorized ports detected above.\n"
-        remediation+="  - If the port is NOT authorized, comment out or delete the associated 'listen' directive.\n"
-        remediation+="  - If the port IS authorized for this specific environment, update the environment variable before running the audit:\n"
-        remediation+="      export NGINX_AUTHORIZED_PORTS=\"80 443 8080\"\n"
-
-        manual "2.4.1 Unauthorized listen ports detected:\n${errors%\\n}${remediation}"
+    if [[ -z "$findings" ]]; then
+        return 0
     fi
+
+    echo -e "MANUAL: unauthorized listen ports detected:\n${findings%$'\n'}\n\
+  Remediation Guidance:\n\
+  - Review the unauthorized ports detected above.\n\
+  - If the port is NOT authorized, remove or correct the associated 'listen' directive.\n\
+  - If the port IS authorized for this environment, define it before running the audit:\n\
+      export NGINX_AUTHORIZED_PORTS=\"80 443 8080\""
+
+    return 0
+}
+
+remediate_listen_ports() {
+    return 1
 }

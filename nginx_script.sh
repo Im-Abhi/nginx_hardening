@@ -83,7 +83,7 @@ for file in "$BASE_DIR/checks/network_configuration/"*; do
     source "$file"
 done
 
-check_listen_ports
+run_control "2.4.1" "Ensure NGINX only listens on authorized ports" check_listen_ports remediate_listen_ports
 check_unknown_host_rejection
 run_control "2.4.3" "Ensure keepalive_timeout is 10 seconds or less, but not 0" check_keepalive_timeout remediate_keepalive_timeout
 run_control "2.4.4" "Ensure send_timeout is 10 seconds or less, but not 0" check_send_timeout remediate_send_timeout
