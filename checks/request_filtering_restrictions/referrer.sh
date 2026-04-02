@@ -90,6 +90,7 @@ check_referrer_policy() {
     fi
 
     if [[ -n "$findings" ]]; then
+        findings="MANUAL: ${findings}"
         findings+="\n  Remediation Guidance:\n"
         findings+="  - Configure the Referrer-Policy header to control how much origin information is sent with requests.\n"
         findings+="  - Choose a policy that balances privacy with your application's analytics and routing requirements.\n"

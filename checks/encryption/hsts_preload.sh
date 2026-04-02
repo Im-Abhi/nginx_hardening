@@ -63,6 +63,7 @@ check_hsts_preload() {
     fi
 
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - WARNING: Preloading forces HTTPS on ALL subdomains.\n"
         errors+="  - Ensure ALL subdomains support HTTPS before enabling this.\n"

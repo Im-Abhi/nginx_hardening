@@ -68,6 +68,7 @@ check_content_security_policy() {
     fi
 
     if [[ -n "$findings" ]]; then
+        findings="MANUAL: ${findings}"
         findings+="\n  Remediation Guidance:\n"
         findings+="  - Configure a Content-Security-Policy (CSP) to mitigate Cross-Site Scripting (XSS).\n"
         findings+="  - CSP policies are highly application-specific. Work with developers to map required origins.\n"

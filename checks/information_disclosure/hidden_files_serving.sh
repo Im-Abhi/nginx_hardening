@@ -43,7 +43,7 @@ check_hidden_files_disabled() {
 
 
     if [[ -n "$errors" ]]; then
-
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Edit your NGINX configuration and add the following to your server block(s):\n"
         errors+="\n"

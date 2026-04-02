@@ -52,6 +52,7 @@ check_detailed_logging() {
 
     # Since this relies on organizational policy, we always append the manual guidance
     # so the auditor knows exactly what forensic variables to look for.
+    errors="MANUAL: ${errors}"
     errors+="\n  Remediation Guidance:\n"
     errors+="  - Verify the log formats above meet your organizational security and privacy policies.\n"
     errors+="  - Edit /etc/nginx/nginx.conf to update the 'log_format' directive if needed.\n"

@@ -75,7 +75,7 @@ check_unknown_host_rejection() {
         return 0
     fi
 
-    echo -e "unknown host rejection checks failed:\n${findings%$'\n'}\n\
+    echo -e "MANUAL: unknown host rejection checks failed:\n${findings%$'\n'}\n\
 \nRemediation Guidance:\n\
   - Ensure your first/default server block rejects unmatched Host headers, for example:\n\n\
         server {\n\

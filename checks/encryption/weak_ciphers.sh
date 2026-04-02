@@ -86,6 +86,7 @@ check_weak_ciphers_disabled() {
     fi
 
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Configure cipher suites to meet your organizational security policy.\n"
         errors+="  - Example strong web server configuration (SSL Labs recommended):\n"

@@ -26,7 +26,7 @@ check_remote_syslog() {
         | grep -Evi '^[[:space:]]*#' \
         | grep -Eqi '^[[:space:]]*error_log[[:space:]]+syslog:server='; then
         
-        errors+="  - No 'error_log' directive configured to send logs to a remote syslog server.\n"
+        errors+="MANUAL:  - No 'error_log' directive configured to send logs to a remote syslog server.\n"
     fi
 
     # -------- Output Reporting --------

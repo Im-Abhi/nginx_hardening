@@ -68,6 +68,7 @@ check_limit_conn() {
 
     # 3. Output results and return 1 for wrapper framework compatibility
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Ensure connection limits are configured to mitigate DoS/DDoS attacks.\n"
         errors+="  - Define the memory zone in your 'http' block:\n"

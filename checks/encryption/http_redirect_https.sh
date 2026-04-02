@@ -33,6 +33,7 @@ check_http_to_https_redirect() {
 
     # -------- Output Reporting --------
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Edit your web server configuration to redirect all unencrypted listening ports (e.g., port 80) to HTTPS.\n"
         errors+="  - Example configuration:\n"

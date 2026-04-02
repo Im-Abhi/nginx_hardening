@@ -89,6 +89,7 @@ check_pfs_ciphers() {
 
     # 5. Output raw errors and guidance
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Ensure your ciphersuites prioritize Perfect Forward Secrecy (ECDHE/DHE/TLS1.3) and exclude weak ciphers.\n"
         errors+="  - Example configuration:\n"

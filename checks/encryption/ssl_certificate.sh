@@ -43,6 +43,7 @@ check_ssl_certificate_configured() {
     fi
 
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Install a certificate and its signing certificate chain onto your web server.\n"
         errors+="  - Edit your encrypted listener to leverage the ssl_certificate and ssl_certificate_key directives.\n"

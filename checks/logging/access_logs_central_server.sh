@@ -31,6 +31,7 @@ check_remote_access_syslog() {
     # -------- Output Reporting --------
     # If errors exist, append the manual guidance and echo it for run_control to capture
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - To enable central logging for your access logs, add the below line to your server block.\n"
         errors+="  - Example configuration:\n"

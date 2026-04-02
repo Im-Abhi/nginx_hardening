@@ -58,10 +58,10 @@ check_ip_based_restrictions() {
     ')
 
     if [[ ${#rules_raw[@]} -eq 0 ]]; then
-        errors+="  - [MANUAL REVIEW] No IP-based access restrictions (allow/deny) found in NGINX configuration.\n"
+        errors+="  - No IP-based access restrictions (allow/deny) found in NGINX configuration.\n"
         errors+="    If this server hosts sensitive or internal endpoints, IP restrictions should be implemented.\n"
     else
-        errors+="  - [MANUAL REVIEW REQUIRED] IP restrictions found. Please verify correctness:\n"
+        errors+="  - IP restrictions found. Please verify correctness:\n"
 
         local block_id
         for entry in "${rules_raw[@]}"; do
@@ -116,6 +116,7 @@ check_ip_based_restrictions() {
 
     # Output results
     if [[ -n "$errors" ]]; then
+        errors="MANUAL: ${errors}"
         errors+="\n  Remediation Guidance:\n"
         errors+="  - Compile a list of trusted IP addresses or network ranges.\n"
         errors+="  - Implement allow/deny rules in 'server' or 'location' blocks.\n"
