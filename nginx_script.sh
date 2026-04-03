@@ -8,7 +8,7 @@ MODULE="all"
 
 usage() {
     echo "Usage: $0 [--audit | --remediate] [--module <module_name>]"
-    echo -e "Available modules: \n * minimize_modules \n * account_security \n * permissions_&_ownerships \n * network_configuration \n * information_disclosure \n * logging \n * encryption \n * request_filtering_restrictions"
+    echo -e "Available modules: \n * minimize_modules \n * account_security \n * permissions_ownerships \n * network_configuration \n * information_disclosure \n * logging \n * encryption \n * request_filtering_restrictions"
     exit 1
 }
 
@@ -83,7 +83,7 @@ fi
 
 
 # ================== PERMISSIONS & OWNERSHIP START ======================
-if [[ "$MODULE" == "all" || "$MODULE" == "permissions_&_ownerships" ]]; then
+if [[ "$MODULE" == "all" || "$MODULE" == "permissions_ownerships" ]]; then
     for file in "$BASE_DIR/checks/permissions_&_ownerships/"*; do
         source "$file"
     done
